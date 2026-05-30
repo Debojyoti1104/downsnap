@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: downsnap
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: free                 # Render free tier (750 hrs/month)
+    envVars:
+      - key: DOWNSNAP_PROXY    # Optional: set a proxy URL if you need one
+        value: ""
+      # ALLOWED_ORIGINS: leave blank to allow all origins (fine for public tools)
+      # To restrict: set to your exact domain, e.g. https://downsnap.onrender.com
+      - key: ALLOWED_ORIGINS
+        value: "*"
+    healthCheckPath: /health

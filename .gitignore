@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# yt-dlp temp artefacts
+*.part
+*.ytdl
+*.mp4.part*
+
+# Cookies (never commit these)
+cookies.txt
+cookies.netscape
+
+# Debug / test artefacts
+backend/info.json
+backend/info_utf8.json
+backend/test_deployment.py
+
+# Editor / OS
+.idea/
+.vscode/
+*.DS_Store
+Thumbs.db

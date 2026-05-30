@@ -1,0 +1,622 @@
+"""
+DownSnap Backend - FastAPI + yt-dlp media downloader proxy
+"""
+
+import os
+import re
+import mimetypes
+import urllib.parse
+from pathlib import Path
+from typing import Optional
+
+import httpx
+import yt_dlp
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, field_validator
+
+# ─────────────────────────────────────────────
+# App bootstrap
+# ─────────────────────────────────────────────
+app = FastAPI(
+    title="DownSnap API",
+    description="Proxy media downloader for Facebook, Instagram, and public video URLs.",
+    version="1.0.0",
+)
+
+# In production set ALLOWED_ORIGINS to your frontend domain, e.g.:
+#   ALLOWED_ORIGINS=https://downsnap.onrender.com
+# Leave unset (or "*") for local development.
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
+_cors_origins: list[str] = (
+    ["*"] if _raw_origins.strip() == "*"
+    else [o.strip() for o in _raw_origins.split(",") if o.strip()]
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=_raw_origins.strip() != "*",
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ─────────────────────────────────────────────
+# Constants & helpers
+# ─────────────────────────────────────────────
+SPOOF_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0.0.0 Safari/537.36"
+    ),
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://www.instagram.com/",
+    "Sec-Fetch-Dest": "video",
+    "Sec-Fetch-Mode": "no-cors",
+    "Sec-Fetch-Site": "cross-site",
+}
+
+# Minimal URL sanity check — just needs a host with at least one dot.
+# We deliberately allow ALL domains so every yt-dlp-supported site works.
+URL_PATTERN = re.compile(
+    r"^https?://[^/\s]+\.[^/\s]",
+    re.IGNORECASE,
+)
+
+# YouTube player client preference order — updated for mid-2026.
+# YouTube regularly rotates which clients it accepts for unauthenticated
+# extraction. Current most-reliable order (as of 2026):
+#   tv_embedded  — embedded TV client, rarely rate-limited
+#   ios          — official iOS app client, usually stable
+#   web_creator  — YouTube Studio client, bypasses many bot checks
+#   web_embedded — embedded web player, good fallback
+#   android      — last resort; sometimes throttled
+_YT_PLAYER_CLIENTS = ["ios", "web_creator", "android"]
+
+YDL_OPTS_BASE: dict = {
+    "quiet": True,
+    "no_warnings": True,
+    "skip_download": True,
+    "noplaylist": False,
+    "http_headers": SPOOF_HEADERS,
+    "extractor_args": {
+        "instagram": {"max_comments": ["0"]},
+        "facebook": {},
+        # YouTube: try all reliable clients in order.
+        # Do NOT skip hls/dash — some videos only serve HLS streams.
+        "youtube": {
+            "player_client": _YT_PLAYER_CLIENTS,
+        },
+    },
+}
+
+# Apply cookies to bypass age restrictions and bot detection
+if os.path.exists("cookies.txt"):
+    YDL_OPTS_BASE["cookiefile"] = "cookies.txt"
+
+# Apply proxy if configured via environment variable (good for scaling)
+_proxy = os.getenv("DOWNSNAP_PROXY")
+if _proxy:
+    YDL_OPTS_BASE["proxy"] = _proxy
+
+
+def sanitize_url(raw: str) -> str:
+    """Strip whitespace and validate basic URL structure."""
+    url = raw.strip()
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    # Only reject strings that clearly aren't URLs at all (no host, no dot)
+    if not URL_PATTERN.match(url):
+        raise ValueError("That doesn't look like a valid web link. Please paste the full URL starting with https://")
+    return url
+
+
+def classify_url(url: str) -> str:
+    """Return 'facebook', 'instagram', 'youtube', or 'generic'."""
+    lower = url.lower()
+    if "facebook.com" in lower or "fb.watch" in lower:
+        return "facebook"
+    if "instagram.com" in lower:
+        return "instagram"
+    if "youtube.com" in lower or "youtu.be" in lower:
+        return "youtube"
+    return "generic"
+
+
+def guess_filename(url: str, content_type: Optional[str]) -> str:
+    """Derive a safe filename from the URL or content-type."""
+    parsed_path = urllib.parse.urlparse(url).path
+    name = parsed_path.split("/")[-1].split("?")[0] or "media"
+    if "." not in name and content_type:
+        ext = mimetypes.guess_extension(content_type.split(";")[0].strip()) or ""
+        name += ext
+    return name or "download"
+
+
+def extract_best_format(formats: list[dict]) -> Optional[str]:
+    """Pick the highest-quality progressive (audio+video muxed) URL."""
+    if not formats:
+        return None
+        
+    # We must exclude HLS (.m3u8) and DASH playlists because the proxy and browser 
+    # cannot stream or download them as single MP4 files.
+    direct_formats = [
+        f for f in formats 
+        if "m3u8" not in f.get("protocol", "") 
+        and "dash" not in f.get("protocol", "")
+        and ".m3u8" not in f.get("url", "")
+    ]
+    
+    # If the site ONLY provides HLS, we fallback to it (though it will cause issues)
+    candidates = direct_formats if direct_formats else formats
+
+    # Prefer formats with both video + audio, sorted by height
+    combined = [
+        f for f in candidates
+        if f.get("vcodec") not in (None, "none")
+        and f.get("acodec") not in (None, "none")
+        and f.get("url")
+    ]
+    if combined:
+        best = max(combined, key=lambda f: f.get("height") or 0)
+        return best["url"]
+    
+    # Fallback 1: any format with video
+    video_only = [f for f in candidates if f.get("vcodec") not in (None, "none") and f.get("url")]
+    if video_only:
+        return max(video_only, key=lambda f: f.get("height") or 0)["url"]
+        
+    # Fallback 2: anything with a URL
+    for f in reversed(candidates):
+        if f.get("url"):
+            return f["url"]
+    return None
+
+
+def _flatten_entries(info: dict) -> list[dict]:
+    """
+    Recursively collect all leaf entries from a yt-dlp info dict.
+    yt-dlp sometimes nests entries (e.g. Instagram profile → posts → slides).
+    Returns a flat list of dicts that each represent one media asset.
+    """
+    if "entries" in info:
+        entries = info.get("entries") or []
+        leaves = []
+        for entry in entries:
+            if not entry:
+                continue
+            leaves.extend(_flatten_entries(entry))
+        return leaves
+    
+    # This node is a leaf (no entries array)
+    return [info]
+
+
+# ─────────────────────────────────────────────
+# Schemas
+# ─────────────────────────────────────────────
+class FetchRequest(BaseModel):
+    url: str
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        try:
+            return sanitize_url(v)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+class MediaItem(BaseModel):
+    type: str          # "image" | "video"
+    url: str
+    thumbnail: Optional[str] = None
+    title: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    duration: Optional[float] = None
+
+
+class FetchResponse(BaseModel):
+    platform: str
+    title: Optional[str]
+    thumbnail: Optional[str]
+    media: list[MediaItem]
+
+
+# ─────────────────────────────────────────────
+# Info extraction helpers
+# ─────────────────────────────────────────────
+def _build_media_item_from_entry(entry: dict) -> MediaItem:
+    """
+    Convert a single yt-dlp info dict into a MediaItem.
+    Tries multiple strategies to locate a usable media URL:
+      1. formats[]          – standard video with quality options
+      2. requested_formats[]– yt-dlp pre-selected best formats
+      3. url                – direct media URL (images, simple videos)
+      4. thumbnails[]       – last-resort image fallback
+    """
+    media_type = "image"
+    media_url: Optional[str] = None
+
+    # ── Strategy 1: formats array (most videos) ──────────────
+    if entry.get("formats"):
+        media_type = "video"
+        media_url = extract_best_format(entry["formats"])
+
+    # ── Strategy 2: requested_formats (yt-dlp best-pick) ─────
+    if not media_url and entry.get("requested_formats"):
+        media_type = "video"
+        media_url = extract_best_format(entry["requested_formats"])
+
+    # ── Strategy 3: direct url field ─────────────────────────
+    if not media_url and entry.get("url"):
+        media_url = entry["url"]
+        # Classify as video if it has duration or an explicit vcodec
+        if entry.get("duration") or entry.get("vcodec") not in (None, "none", ""):
+            media_type = "video"
+        else:
+            media_type = "image"
+
+    # ── Strategy 4: thumbnails array ─────────────────────────
+    if not media_url:
+        thumbs = entry.get("thumbnails") or []
+        # Prefer the highest-resolution thumbnail
+        valid = [t for t in thumbs if t.get("url")]
+        if valid:
+            best_thumb = max(valid, key=lambda t: (t.get("width") or 0) * (t.get("height") or 0))
+            media_url = best_thumb["url"]
+            media_type = "image"
+
+    # ── Strategy 5: thumbnail string ─────────────────────────
+    if not media_url and entry.get("thumbnail"):
+        media_url = entry["thumbnail"]
+        media_type = "image"
+
+    if not media_url:
+        raise ValueError("No usable URL found in entry.")
+
+    return MediaItem(
+        type=media_type,
+        url=media_url,
+        thumbnail=entry.get("thumbnail") or (entry.get("thumbnails") or [{}])[-1].get("url"),
+        title=entry.get("title") or entry.get("description"),
+        width=entry.get("width"),
+        height=entry.get("height"),
+        duration=entry.get("duration"),
+    )
+
+
+def run_yt_dlp(url: str) -> dict:
+    """
+    Run yt-dlp extraction and return raw info dict.
+    For YouTube URLs, if the default player client chain fails, retries with
+    each client individually to maximise success rate against YouTube's
+    rotating player JS obfuscation.
+    """
+    opts = dict(YDL_OPTS_BASE)
+    # Deep-copy extractor_args so mutations don't bleed between calls
+    opts["extractor_args"] = {k: dict(v) for k, v in YDL_OPTS_BASE["extractor_args"].items()}
+
+    is_youtube = "youtube.com" in url or "youtu.be" in url
+
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        return info or {}
+    except yt_dlp.utils.DownloadError as first_exc:
+        err_str = str(first_exc)
+        # Only retry for YouTube player response errors; re-raise everything else
+        if not is_youtube or "player response" not in err_str.lower():
+            raise
+
+        # ── Retry: try each client individually ──────────────────────────
+        last_exc = first_exc
+        for client in _YT_PLAYER_CLIENTS:
+            retry_opts = dict(opts)
+            retry_opts["extractor_args"] = {
+                **opts["extractor_args"],
+                "youtube": {"player_client": [client], "skip": ["hls", "dash"]},
+            }
+            try:
+                with yt_dlp.YoutubeDL(retry_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                if info:
+                    return info
+            except yt_dlp.utils.DownloadError as retry_exc:
+                last_exc = retry_exc
+                continue
+
+        # All clients exhausted
+        raise last_exc
+
+
+# ─────────────────────────────────────────────
+# Routes
+# ─────────────────────────────────────────────
+
+# ─────────────────────────────────────────────
+@app.post("/api/fetch-info", response_model=FetchResponse)
+async def fetch_info(payload: FetchRequest):
+    """
+    Parse a URL and return structured media metadata.
+    Handles Facebook, Instagram (including carousels), and generic URLs.
+    """
+    url = payload.url
+    platform = classify_url(url)
+
+    try:
+        info = run_yt_dlp(url)
+    except yt_dlp.utils.DownloadError as exc:
+        detail = str(exc).lower()
+
+        # ── All messages here are plain English, user-facing — no dev jargon ──
+
+        # Login / private content → try Hydra fallback first (for Instagram)
+        if any(kw in detail for kw in [
+            "private", "login", "sign in", "sign-in", "authentication",
+            "cookies", "account", "members only"
+        ]):
+            info = {}  # let the empty-results path trigger Hydra for Instagram
+
+        elif any(kw in detail for kw in ["player response", "playerresponse", "nsig"]):
+            raise HTTPException(status_code=503, detail={
+                "code": "youtube_throttle",
+                "message": "YouTube is temporarily blocking this request.",
+                "hint": "This happens occasionally. Wait 1–2 minutes, then try again.",
+            })
+
+        elif any(kw in detail for kw in ["geo", "not available in your country", "region"]):
+            raise HTTPException(status_code=451, detail={
+                "code": "geo_blocked",
+                "message": "This video isn't available in your region.",
+                "hint": "The uploader has restricted this content to certain countries.",
+            })
+
+        elif any(kw in detail for kw in ["copyright", "removed", "has been terminated", "account has been"]):
+            raise HTTPException(status_code=410, detail={
+                "code": "removed",
+                "message": "This video has been removed or taken down.",
+                "hint": "The content may have been deleted by the uploader or removed for policy reasons.",
+            })
+
+        elif "age" in detail and any(kw in detail for kw in ["restrict", "gate", "confirm"]):
+            raise HTTPException(status_code=403, detail={
+                "code": "age_restricted",
+                "message": "This video is age-restricted and can't be downloaded without a login.",
+                "hint": "Age-gated content requires an account to access.",
+            })
+
+        elif "drm" in detail or "widevine" in detail or "encrypted" in detail:
+            raise HTTPException(status_code=403, detail={
+                "code": "drm",
+                "message": "This video is DRM-protected and can't be downloaded.",
+                "hint": "DRM-protected videos (like Netflix, Disney+) are encrypted and can't be saved.",
+            })
+
+        elif any(kw in detail for kw in ["premium", "subscription", "paid", "paywalled"]):
+            raise HTTPException(status_code=403, detail={
+                "code": "premium",
+                "message": "This content is behind a paywall or requires a paid subscription.",
+                "hint": "Only free, publicly accessible content can be downloaded.",
+            })
+
+        elif any(kw in detail for kw in ["404", "not found", "video unavailable", "no video", "deleted"]):
+            raise HTTPException(status_code=404, detail={
+                "code": "not_found",
+                "message": "We couldn't find that video. It may have been deleted.",
+                "hint": "Double-check the link — the post or video may no longer exist.",
+            })
+
+        elif any(kw in detail for kw in [
+            "unsupported url", "no suitable", "unable to extract", "extractor"
+        ]):
+            raise HTTPException(status_code=400, detail={
+                "code": "unsupported",
+                "message": "This link or website isn't supported yet.",
+                "hint": "Make sure the link points directly to a video or photo post, not a profile page or home feed.",
+            })
+
+        elif any(kw in detail for kw in ["captcha", "bot check", "robot", "challenge"]):
+            raise HTTPException(status_code=503, detail={
+                "code": "captcha",
+                "message": "The website is blocking automated requests right now.",
+                "hint": "Try again in a few minutes — the block is usually temporary.",
+            })
+
+        elif any(kw in detail for kw in ["429", "too many requests", "rate limit", "ratelimit"]):
+            raise HTTPException(status_code=429, detail={
+                "code": "rate_limited",
+                "message": "Too many requests — the website is throttling us.",
+                "hint": "Wait a minute and try again.",
+            })
+
+        elif any(kw in detail for kw in [
+            "timeout", "timed out", "connection aborted", "connection reset",
+            "network", "unreachable", "ssl", "certificate"
+        ]):
+            raise HTTPException(status_code=503, detail={
+                "code": "network_error",
+                "message": "Couldn't connect to the website.",
+                "hint": "The site may be down, slow, or blocking our server. Try again shortly.",
+            })
+
+        elif any(kw in detail for kw in ["live", "is live", "livestream"]):
+            raise HTTPException(status_code=400, detail={
+                "code": "live_stream",
+                "message": "Live streams can't be downloaded while they're airing.",
+                "hint": "Wait until the stream ends and a replay is available, then try again.",
+            })
+
+        else:
+            # Generic — do NOT expose the raw yt-dlp message
+            raise HTTPException(status_code=422, detail={
+                "code": "extraction_failed",
+                "message": "Couldn't extract media from this link.",
+                "hint": "Make sure the link points to a public video or photo post and try again.",
+            })
+
+    except HTTPException:
+        raise  # re-raise our own structured errors unchanged
+    except Exception:
+        raise HTTPException(status_code=500, detail={
+            "code": "server_error",
+            "message": "Something went wrong on our end.",
+            "hint": "Please try again in a moment.",
+        })
+
+    # ── Flatten nested entries (handles carousels, playlists, nested posts)
+    media_items: list[MediaItem] = []
+    
+    if info:
+        leaves = _flatten_entries(info)
+        last_exc: Optional[Exception] = None
+
+        for leaf in leaves:
+            try:
+                item = _build_media_item_from_entry(leaf)
+                media_items.append(item)
+            except Exception as exc:
+                last_exc = exc
+                continue  # skip unparseable entries gracefully
+
+        # If we got zero items and there was only one leaf, surface a clean error
+        if not media_items and last_exc is not None and len(leaves) == 1:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "extraction_failed",
+                    "message": "Found the post but couldn't extract any downloadable media.",
+                    "hint": "The post may contain only text, a live stream, or a format we can't download yet.",
+                },
+            )
+
+    if not media_items:
+        if platform == "instagram":
+            # ── Hydra Fallback Network (Leeching) ──
+            # Try our third-party scrapers
+            from scrapers import hydra_fetch
+            hydra_items = await hydra_fetch(url)
+            if hydra_items:
+                # Convert dicts to MediaItems
+                media_objects = [MediaItem(**i) for i in hydra_items]
+                return FetchResponse(
+                    platform=platform,
+                    title=media_objects[0].title or "Instagram Media",
+                    thumbnail=media_objects[0].thumbnail,
+                    media=media_objects,
+                )
+
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "no_media",
+                "message": "No downloadable media was found in this post.",
+                "hint": "The post might be private, contain only text, or be from a section we can't access yet.",
+            },
+        )
+
+    return FetchResponse(
+        platform=platform,
+        title=info.get("title") or info.get("description"),
+        thumbnail=info.get("thumbnail"),
+        media=media_items,
+    )
+
+
+@app.get("/api/download-proxy")
+async def download_proxy(
+    request: Request,
+    media_url: str = Query(..., description="Direct media URL to proxy-stream to client"),
+    filename: Optional[str] = Query(None, description="Override filename for download"),
+    source_url: Optional[str] = Query(None, description="Original source URL for referer"),
+):
+    """
+    Proxy-stream a remote media file to the client.
+    Spoofs browser headers to bypass CORS, referer checks, and signed URL restrictions.
+    Supports HTTP Range requests so video players can scrub and buffer correctly.
+    """
+    if not media_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Invalid media URL.")
+
+    # Build platform-specific referer dynamically
+    referer = "https://www.instagram.com/"
+    if source_url:
+        parsed = urllib.parse.urlparse(source_url)
+        referer = f"{parsed.scheme}://{parsed.netloc}/"
+    elif "fbcdn" in media_url or "facebook" in media_url:
+        referer = "https://www.facebook.com/"
+
+    headers = {**SPOOF_HEADERS, "Referer": referer}
+    
+    # Forward the client's Range header to support video buffering/seeking
+    client_range = request.headers.get("range")
+    if client_range:
+        headers["Range"] = client_range
+
+    try:
+        # Disable timeout for large video streams
+        client = httpx.AsyncClient(follow_redirects=True, timeout=None)
+        req = client.build_request("GET", media_url, headers=headers)
+        response = await client.send(req, stream=True)
+
+        if response.status_code >= 400:
+            await response.aclose()
+            await client.aclose()
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Remote server returned {response.status_code}.",
+            )
+
+        content_type = response.headers.get("content-type", "application/octet-stream")
+        dl_filename = filename or guess_filename(media_url, content_type)
+
+        async def streamer():
+            try:
+                async for chunk in response.aiter_bytes(chunk_size=65536):
+                    yield chunk
+            finally:
+                await response.aclose()
+                await client.aclose()
+
+        # Pass through range and length headers for the browser video player
+        resp_headers = {
+            "Content-Disposition": f'attachment; filename="{dl_filename}"',
+            "X-Content-Type-Options": "nosniff",
+            "Accept-Ranges": "bytes",
+        }
+        
+        if "content-length" in response.headers:
+            resp_headers["Content-Length"] = response.headers["content-length"]
+        if "content-range" in response.headers:
+            resp_headers["Content-Range"] = response.headers["content-range"]
+
+        return StreamingResponse(
+            streamer(),
+            status_code=response.status_code,
+            media_type=content_type,
+            headers=resp_headers,
+        )
+
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to reach media server: {str(exc)}")
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "DownSnap API"}
+
+
+# ─────────────────────────────────────────────
+# Static frontend (serves index.html + assets)
+# Mount AFTER all API routes so /api/* is never shadowed.
+# ─────────────────────────────────────────────
+_frontend_dir = Path(__file__).parent.parent / "frontend"
+if _frontend_dir.is_dir():
+    app.mount("/", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
