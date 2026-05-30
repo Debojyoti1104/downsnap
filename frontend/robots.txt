@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+# Don't index API or docs routes
+Disallow: /api/
+Disallow: /docs
+Disallow: /redoc
+Disallow: /openapi.json
+
+Sitemap: https://downsnap.app/sitemap.xml

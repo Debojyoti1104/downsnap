@@ -4,6 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+  <!-- PWA + theme -->
+  <meta name="theme-color" content="#6c63ff" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="DownSnap" />
+  <link rel="manifest" href="/site.webmanifest" />
+
   <!-- ═══════════════════════════════════════════════
        PRIMARY SEO — targets all three categories
   ═══════════════════════════════════════════════ -->
@@ -210,12 +218,18 @@
   }
   </script>
 
+  <!-- DNS prefetch for faster CDN connections -->
+  <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
+
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
   <!-- Styles -->
+  <link rel="preload" as="style" href="style.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 
@@ -702,7 +716,7 @@
 <!-- ─── FOOTER ───────────────────────── -->
 <footer>
   <div class="container footer-inner">
-    <span class="footer-copy">&copy; 2025 DownSnap — Free Video Downloader. Built for speed and privacy.</span>
+    <span class="footer-copy">&copy; 2026 DownSnap — Free Video Downloader. Built for speed and privacy.</span>
     <nav class="footer-links" aria-label="Footer links">
       <a href="#">Privacy Policy</a>
       <a href="#">Terms of Use</a>
