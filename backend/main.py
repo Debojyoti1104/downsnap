@@ -2,6 +2,9 @@
 DownSnap Backend - FastAPI + yt-dlp media downloader proxy
 """
 
+import asyncio
+import datetime
+import logging
 import os
 import re
 import mimetypes
@@ -17,6 +20,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
+logger = logging.getLogger("downsnap")
+
 # ─────────────────────────────────────────────
 # App bootstrap
 # ─────────────────────────────────────────────
@@ -25,6 +30,58 @@ app = FastAPI(
     description="Proxy media downloader for Facebook, Instagram, and public video URLs.",
     version="1.0.0",
 )
+
+# ─────────────────────────────────────────────
+# Keep-alive self-pinger (prevents Render free-tier spin-down)
+# ─────────────────────────────────────────────
+_PING_INTERVAL_SECONDS = 10 * 60  # 10 minutes — well under Render's 15-min idle timeout
+_ping_task: Optional[asyncio.Task] = None
+_last_ping: Optional[datetime.datetime] = None
+
+
+async def _self_ping_loop() -> None:
+    """
+    Background coroutine that pings /ping on this server every 10 minutes.
+    This prevents Render's free-tier from spinning down the instance due to inactivity.
+    The loop is intentionally resilient: network errors are swallowed and retried
+    on the next interval so a transient failure never kills the loop.
+    """
+    global _last_ping
+    # Give the server a few seconds to fully start before the first ping
+    await asyncio.sleep(30)
+
+    # Determine our own URL: Render injects RENDER_EXTERNAL_URL automatically
+    base_url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
+    if not base_url:
+        # Fallback for local dev — just skip pinging
+        logger.info("[keep-alive] RENDER_EXTERNAL_URL not set; self-ping disabled.")
+        return
+
+    ping_url = f"{base_url}/ping"
+    logger.info("[keep-alive] Self-ping loop started → %s (every %ds)", ping_url, _PING_INTERVAL_SECONDS)
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        while True:
+            try:
+                resp = await client.get(ping_url)
+                _last_ping = datetime.datetime.utcnow()
+                logger.info("[keep-alive] Ping OK (%d) at %s", resp.status_code, _last_ping.isoformat())
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[keep-alive] Ping failed (will retry): %s", exc)
+
+            await asyncio.sleep(_PING_INTERVAL_SECONDS)
+
+
+@app.on_event("startup")
+async def start_keep_alive() -> None:
+    global _ping_task
+    _ping_task = asyncio.create_task(_self_ping_loop())
+
+
+@app.on_event("shutdown")
+async def stop_keep_alive() -> None:
+    if _ping_task and not _ping_task.done():
+        _ping_task.cancel()
 
 # In production set ALLOWED_ORIGINS to your frontend domain, e.g.:
 #   ALLOWED_ORIGINS=https://downsnap.onrender.com
@@ -608,9 +665,24 @@ async def download_proxy(
         raise HTTPException(status_code=502, detail=f"Failed to reach media server: {str(exc)}")
 
 
+@app.get("/ping")
+async def ping():
+    """
+    Lightweight keep-alive endpoint.
+    Point UptimeRobot / cron-job.org at this URL every 5–14 minutes
+    to prevent Render's free-tier from spinning down the service.
+    """
+    return {"status": "pong", "ts": datetime.datetime.utcnow().isoformat() + "Z"}
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "DownSnap API"}
+    """Health-check endpoint (also referenced in render.yaml as healthCheckPath)."""
+    return {
+        "status": "ok",
+        "service": "DownSnap API",
+        "last_self_ping": _last_ping.isoformat() + "Z" if _last_ping else None,
+    }
 
 
 # ─────────────────────────────────────────────
