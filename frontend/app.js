@@ -56,7 +56,7 @@ const TAB_CONFIG = {
   facebook: {
     placeholderHint: 'e.g. https://www.facebook.com/watch?v=… or fb.watch/…',
     subOptions: [
-      { id: 'opt-fb-reel',  label: 'Reel',  emoji: '🎬' },
+      { id: 'opt-fb-reel',  label: 'Reel',  emoji: '🎥' },
       { id: 'opt-fb-video', label: 'Video', emoji: '▶' },
     ],
   },
@@ -64,13 +64,13 @@ const TAB_CONFIG = {
     placeholderHint: 'e.g. https://www.instagram.com/p/… or /reel/…',
     subOptions: [
       { id: 'opt-ig-post',  label: 'Post',       emoji: '🖼' },
-      { id: 'opt-ig-reel',  label: 'Reel',       emoji: '🎬' },
+      { id: 'opt-ig-reel',  label: 'Reel',       emoji: '🎥' },
     ],
   },
   any: {
-    placeholderHint: 'Any public video URL — YouTube, TikTok, Vimeo, Twitter…',
+    placeholderHint: 'Any public video URL — YouTube, Pinterest, TikTok, Instagram, Kuaishou…',
     subOptions: [],
-    banner: 'Handles any publicly accessible video on the internet. Powered by yt-dlp (1800+ supported sites).',
+    banner: 'Universal downloader for YouTube, Pinterest, Instagram, TikTok, Kuaishou & 1800+ sites. Powered by yt-dlp.',
   },
 };
 
@@ -78,10 +78,45 @@ const TAB_CONFIG = {
 // FAQ DATA
 // ═══════════════════════════════════════════════════════
 const FAQ_DATA = [
+  // ── YouTube (§1 traffic source) ──
+  {
+    q: 'How do I download a YouTube video for free online?',
+    a: 'Copy the YouTube video URL from your browser or the Share menu. Paste it into DownSnap and click “Download Free”. DownSnap extracts the highest available quality — typically 1080p HD — and downloads it directly to your device in seconds. No account, no app, completely free.',
+  },
+  {
+    q: 'How do I download YouTube Shorts for free?',
+    a: 'Open the YouTube Short in your browser. Copy the URL (it will contain /shorts/ in the address). Paste it into DownSnap and click “Download Free”. The Short will be saved to your device in full HD quality with no watermark.',
+  },
+  // ── Instagram (§2 traffic source) ──
+  {
+    q: 'How do I download Instagram Reels without a watermark?',
+    a: 'Open the Instagram Reel in your browser or tap Share and copy the link. Paste it into DownSnap and click “Download Free”. The Reel is downloaded at full quality with no watermark added.',
+  },
+  {
+    q: 'How do I download an entire Instagram carousel post?',
+    a: 'Paste the Instagram post URL (e.g. instagram.com/p/XXXXXXX/) into DownSnap and click “Download Free”. DownSnap extracts every image and video in the carousel as individual downloadable items — each with its own Download button.',
+  },
+  {
+    q: 'Can I download Instagram Stories without them knowing?',
+    a: 'DownSnap downloads public Instagram stories anonymously without notifying the account owner. It only works with public accounts — private stories are not accessible.',
+  },
+  {
+    q: 'Can I download private Instagram posts?',
+    a: 'No. DownSnap only works with publicly accessible content. Private accounts and posts require account authentication, which DownSnap does not support in order to protect user privacy and security.',
+  },
+  // ── Pinterest (§3 traffic source, trending +6%) ──
+  {
+    q: 'Can I download Pinterest videos?',
+    a: 'Yes. DownSnap supports downloading Pinterest videos and video pins. Open the Pinterest video in your browser, copy the URL (e.g. pinterest.com/pin/…), paste it into DownSnap, and click “Download Free”. The video will be saved in HD with no watermark.',
+  },
+  {
+    q: 'How do I save a Pinterest video to my phone?',
+    a: 'Open the Pinterest video pin in your mobile browser, copy the URL from the address bar, and paste it into downsnap.in. Tap “Download Free” — the video will save directly to your Camera Roll (iPhone) or Downloads folder (Android) without any app required.',
+  },
   // ── Facebook ──
   {
     q: 'How do I download a Facebook video for free?',
-    a: 'Go to the Facebook post, click the three-dot menu and choose “Copy link”, or copy the URL from your browser address bar. Paste it into DownSnap and click “Download Now”. Your video will be ready in HD within seconds — no login or app required.',
+    a: 'Go to the Facebook post, click the three-dot menu and choose “Copy link”, or copy the URL from your browser address bar. Paste it into DownSnap and click “Download Free”. Your video will be ready in HD within seconds — no login or app required.',
   },
   {
     q: 'Can I download Facebook Reels without a watermark?',
@@ -89,37 +124,25 @@ const FAQ_DATA = [
   },
   {
     q: 'How do I save a Facebook Story before it disappears?',
-    a: 'Open the Facebook Story in your browser, copy the URL from the address bar, and paste it into DownSnap. Click “Download Now” and save the story video or photo to your device in HD instantly.',
+    a: 'Open the Facebook Story in your browser, copy the URL from the address bar, and paste it into DownSnap. Click “Download Free” and save the story video or photo to your device in HD instantly.',
   },
   {
     q: 'Does DownSnap work with fb.watch short links?',
     a: 'Yes. DownSnap supports both full facebook.com URLs and short fb.watch links. Simply paste either format and it will work correctly.',
   },
-  // ── Instagram ──
+  // ── Trending platforms (Kuaishou +40%, Meta AI +30%) ──
   {
-    q: 'How do I download Instagram Reels without a watermark?',
-    a: 'Open the Instagram Reel in your browser or tap Share and copy the link. Paste it into DownSnap and click “Download Now”. The Reel is downloaded at full quality with no watermark added.',
+    q: 'Can I download Kuaishou (快手) videos?',
+    a: 'Yes. DownSnap supports Kuaishou video downloads. Copy the Kuaishou video link from the app or website, paste it into DownSnap, and click “Download Free”. Your video will be ready in HD within seconds.',
   },
   {
-    q: 'Can I download Instagram Stories without them knowing?',
-    a: 'DownSnap downloads public Instagram stories anonymously without notifying the account owner. It only works with public accounts — private stories are not accessible.',
-  },
-  {
-    q: 'How do I download an entire Instagram carousel post?',
-    a: 'Paste the Instagram post URL (e.g. instagram.com/p/XXXXXXX/) into DownSnap and click “Download Now”. DownSnap extracts every image and video in the carousel as individual downloadable items — each with its own Download button.',
-  },
-  {
-    q: 'Can I download private Instagram posts?',
-    a: 'No. DownSnap only works with publicly accessible content. Private accounts and posts require account authentication, which DownSnap does not support in order to protect user privacy and security.',
+    q: 'Can I convert a video to audio or MP3?',
+    a: 'DownSnap downloads the original video file (MP4). To extract audio, paste the URL, download the video, then use a free converter like FFmpeg or an online MP3 converter to extract the audio track. Some platforms (like SoundCloud) return audio files directly.',
   },
   // ── Universal ──
   {
-    q: 'What websites does DownSnap support besides Facebook and Instagram?',
-    a: 'DownSnap is powered by yt-dlp, which supports over 1,800 websites including YouTube, TikTok, Twitter/X, Vimeo, Dailymotion, Reddit, Twitch, LinkedIn, Pinterest, SoundCloud, and many more. Paste any public video URL and DownSnap will attempt to download it.',
-  },
-  {
-    q: 'How do I download a YouTube video for free online?',
-    a: 'Paste the YouTube video URL into DownSnap’s “Any URL” tab and click “Download Now”. DownSnap extracts the highest available quality and downloads it directly to your device.',
+    q: 'What websites does DownSnap support?',
+    a: 'DownSnap is powered by yt-dlp and supports over 1,800 websites including YouTube, YouTube Shorts, Instagram, Pinterest, TikTok, Twitter/X, Vimeo, Dailymotion, Reddit, Twitch, LinkedIn, SoundCloud, Kuaishou, Bilibili, Rumble and many more. Paste any public video URL and DownSnap will attempt to download it.',
   },
   {
     q: 'Can I download TikTok videos without a watermark?',
@@ -139,15 +162,7 @@ const FAQ_DATA = [
   },
   {
     q: 'What video quality does DownSnap download?',
-    a: 'DownSnap always selects the highest available quality that includes both video and audio tracks — typically 720p or 1080p for most platforms.',
-  },
-  {
-    q: 'Does DownSnap work on mobile?',
-    a: 'Yes. The interface is fully responsive. On iOS, downloaded files go to your Files app. On Android, they go to your Downloads folder.',
-  },
-  {
-    q: 'How do I download an entire Instagram carousel post?',
-    a: 'Paste the Instagram post URL (e.g. instagram.com/p/ABC123/) and click Fetch Media. DownSnap extracts every image and video slide, each with its own Download button.',
+    a: 'DownSnap always selects the highest available quality that includes both video and audio tracks — typically 720p or 1080p HD for most platforms. For YouTube, 4K is available where the source provides it.',
   },
 ];
 
@@ -440,21 +455,32 @@ async function handleFetch() {
     });
 
     if (!response.ok) {
-        let detail = 'An unknown error occurred.';
+        let userMessage = 'An unknown error occurred. Please try again.';
         try {
           const errData = await response.json();
-          detail = errData.detail || detail;
-        } catch (e) {}
+          const d = errData.detail;
+          if (typeof d === 'string') {
+            // Plain string detail (e.g. from download-proxy or simple raises)
+            userMessage = d;
+          } else if (Array.isArray(d)) {
+            // Pydantic v2 validation error array: [{loc, msg, type}]
+            userMessage = d.map(e => e.msg || JSON.stringify(e)).join('; ');
+          } else if (d && typeof d === 'object') {
+            // Our structured errors: {code, message, hint}
+            userMessage = d.message || d.msg || JSON.stringify(d);
+            if (d.hint) userMessage += ` — ${d.hint}`;
+          }
+        } catch (e) { /* keep default */ }
 
         let prefix = '❌ ';
-        if (response.status === 403) prefix = '🔒 ';
+        if (response.status === 403)  prefix = '🔒 ';
         else if (response.status === 404) prefix = '🔍 ';
-        else if (response.status === 410) prefix = '⚖️ '; // Copyright/Removed
-        else if (response.status === 451) prefix = '🌍 '; // Geo-blocked
-        else if (response.status >= 500) prefix = '⚠️ ';
+        else if (response.status === 410) prefix = '⚖️ ';
+        else if (response.status === 451) prefix = '🌍 ';
         else if (response.status === 429) prefix = '⏳ ';
+        else if (response.status >= 500) prefix = '⚠️ ';
 
-        showError(prefix + detail);
+        showError(prefix + userMessage);
         return;
       }
 

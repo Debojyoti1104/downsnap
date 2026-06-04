@@ -27,20 +27,15 @@ class BaseScraper:
 # ─────────────────────────────────────────────
 class CobaltScraper(BaseScraper):
     name = "cobalt"
-    # A massive list of known public Cobalt instances hosted by different users globally.
-    # If one goes down or hits a rate limit, the Hydra automatically moves to the next.
+    # Public Cobalt v2 instances — /api endpoint with Accept: application/json
     instances = [
         "https://api.cobalt.tools",
-        "https://co.wuk.sh",
-        "https://cobalt-api.kwiatekm.one",
-        "https://cobalt.qewertyy.dev",
-        "https://api.cobalt.beparanoid.de",
         "https://cobalt.cibere.dev",
+        "https://cobalt.qewertyy.dev",
+        "https://cobalt.owo.network",
+        "https://co.eepy.today",
         "https://api.cobalt.ac",
         "https://cobalt.jayw.uk",
-        "https://api.cobalt.wlvs.space",
-        "https://cobalt.owo.network",
-        "https://co.eepy.today"
     ]
 
     async def fetch(self, url: str) -> Optional[list[dict]]:
@@ -48,45 +43,46 @@ class CobaltScraper(BaseScraper):
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
+        # Cobalt v2 payload format
         payload = {
             "url": url,
-            "vQuality": "1080",
-            "isAudioOnly": False
+            "videoQuality": "1080",
+            "downloadMode": "auto",
+            "filenameStyle": "basic",
         }
 
-        # Try instances until one works
         for api_base in self.instances:
             try:
                 async with httpx.AsyncClient(timeout=15.0) as client:
                     resp = await client.post(
-                        f"{api_base}/api/json", 
-                        headers=headers, 
+                        f"{api_base}/api",
+                        headers=headers,
                         json=payload
                     )
-                    
+
                     if resp.status_code == 429:
                         print(f"[{self.name}] Rate limited on {api_base}")
-                        continue # Try next instance
-                        
-                    if resp.status_code != 200:
                         continue
-                        
+
+                    if resp.status_code not in (200, 201):
+                        continue
+
                     data = resp.json()
                     status = data.get("status")
-                    
+
                     if status == "error":
+                        print(f"[{self.name}] Error from {api_base}: {data.get('error', {})}")
                         continue
-                        
-                    if status == "redirect" or status == "stream":
+
+                    if status in ("redirect", "tunnel", "stream"):
                         return [{
                             "type": "video",
                             "url": data.get("url"),
-                            "title": "Instagram Story",
+                            "title": "Instagram Media",
                             "thumbnail": None
                         }]
-                        
+
                     if status == "picker":
-                        # Carousel/Multiple items
                         items = []
                         for item in data.get("picker", []):
                             items.append({
@@ -94,81 +90,138 @@ class CobaltScraper(BaseScraper):
                                 "url": item.get("url"),
                                 "thumbnail": item.get("thumb")
                             })
-                        return items
-                        
+                        if items:
+                            return items
+
             except Exception as e:
                 print(f"[{self.name}] Instance {api_base} failed: {e}")
                 continue
-        
-        # If all instances fail, cooldown this scraper
-        self.set_cooldown(1) # Cooldown for 1 hour if all public nodes are dead
+
+        self.set_cooldown(1)
         return None
 
+
 # ─────────────────────────────────────────────
-# 2. SnapSave / SnapInsta Fallback
-# Relies on their public frontend API. 
+# 2. SaveIG Fallback (JSON API, no HTML scraping)
+# ─────────────────────────────────────────────
+class SaveIGScraper(BaseScraper):
+    name = "saveig"
+
+    async def fetch(self, url: str) -> Optional[list[dict]]:
+        import re
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://saveig.app",
+            "Referer": "https://saveig.app/",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+                resp = await client.post(
+                    "https://v3.saveig.app/api/ajaxSearch",
+                    headers=headers,
+                    data={"q": url, "t": "media", "lang": "en"}
+                )
+                if resp.status_code == 429:
+                    self.set_cooldown(24)
+                    return None
+                if resp.status_code != 200:
+                    return None
+
+                data = resp.json()
+                if not data.get("status") == "ok":
+                    return None
+
+                html = data.get("data", "")
+                # Extract HD/SD download links from the response HTML
+                matches = re.findall(r'href=["\x27](https://[^"\x27]+)["\x27][^>]*>[^<]*(?:Download|HD|SD)', html, re.IGNORECASE)
+                items = []
+                seen = set()
+                for link in matches:
+                    clean = link.replace("&amp;", "&")
+                    if clean not in seen:
+                        seen.add(clean)
+                        items.append({
+                            "type": "video",
+                            "url": clean,
+                            "title": "Instagram Media",
+                            "thumbnail": None
+                        })
+                if items:
+                    return items
+
+        except Exception as e:
+            print(f"[{self.name}] Failed: {e}")
+
+        return None
+
+
+# ─────────────────────────────────────────────
+# 3. SnapInsta Fallback (last resort)
 # ─────────────────────────────────────────────
 class SnapInstaScraper(BaseScraper):
     name = "snapinsta"
-    
+
     async def fetch(self, url: str) -> Optional[list[dict]]:
-        # SnapInsta requires specific form data and headers to bypass their basic bot check
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept": "*/*",
             "Origin": "https://snapinsta.app",
             "Referer": "https://snapinsta.app/"
         }
-        
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                 resp = await client.post(
                     "https://snapinsta.app/action.php",
                     headers=headers,
                     data={"url": url, "action": "post"}
                 )
-                
                 if resp.status_code == 429:
                     self.set_cooldown(24)
                     return None
-                    
                 if resp.status_code != 200:
                     return None
-                
-                # SnapInsta returns raw HTML containing the download links.
-                # A robust implementation would use BeautifulSoup here, but for zero-dependencies
-                # we can use simple string extraction.
+
                 text = resp.text
-                if "No data found" in text:
+                if "No data found" in text or not text.strip():
                     return None
-                    
-                # Extremely rudimentary extraction (Proof of concept)
-                # In production, regex or bs4 is needed here.
-                links = []
+
                 import re
-                # Find hrefs inside the download buttons
-                matches = re.findall(r'href="(https://[^"]+)"[^>]*>Download', text)
-                for match in matches:
-                    links.append({
-                        "type": "video", # Assume video for safety
-                        "url": match.replace("&amp;", "&"),
-                        "title": "Instagram Media"
-                    })
-                
-                if links:
-                    return links
-                
+                # Match direct CDN URLs in download links
+                matches = re.findall(
+                    r'href=["\x27](https://(?:cdn|scontent|video)[^"\x27]+\.(?:mp4|jpg|jpeg|png)[^"\x27]*)["\x27]',
+                    text, re.IGNORECASE
+                )
+                items = []
+                seen = set()
+                for m in matches:
+                    clean = m.replace("&amp;", "&")
+                    if clean not in seen:
+                        seen.add(clean)
+                        ext = clean.split("?")[0].rsplit(".", 1)[-1].lower()
+                        items.append({
+                            "type": "image" if ext in ("jpg", "jpeg", "png") else "video",
+                            "url": clean,
+                            "title": "Instagram Media",
+                            "thumbnail": None
+                        })
+                if items:
+                    return items
+
         except Exception as e:
             print(f"[{self.name}] Failed: {e}")
-            
+
         return None
+
 
 # ─────────────────────────────────────────────
 # Engine Controller
 # ─────────────────────────────────────────────
 SCRAPERS = [
     CobaltScraper(),
-    SnapInstaScraper()
+    SaveIGScraper(),
+    SnapInstaScraper(),
 ]
 
 async def hydra_fetch(url: str) -> Optional[list[dict]]:
