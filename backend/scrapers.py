@@ -65,6 +65,7 @@ class CobaltScraper(BaseScraper):
                         continue
 
                     if resp.status_code not in (200, 201):
+                        print(f"[{self.name}] {api_base} returned {resp.status_code}")
                         continue
 
                     data = resp.json()
