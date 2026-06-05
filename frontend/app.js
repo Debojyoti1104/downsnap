@@ -645,6 +645,18 @@ dom.tabButtons.forEach((btn) => {
 // ═══════════════════════════════════════════════════════
 (function init() {
   initTheme();
-  switchTab('facebook');
+
+  // Auto-select tab based on SEO landing page
+  const pageMap = {
+    'youtube-downloader': 'any',
+    'instagram-downloader': 'instagram',
+    'online-video-downloader': 'any',
+    'facebook-video-downloader': 'facebook',
+    'pinterest-video-downloader': 'any',
+  };
+  const bodyPage = document.body.getAttribute('data-page');
+  const defaultTab = pageMap[bodyPage] || 'facebook';
+  switchTab(defaultTab);
+
   renderFAQ();
 })();

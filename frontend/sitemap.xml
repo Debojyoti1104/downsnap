@@ -2,20 +2,41 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 
-  <!-- Only the canonical HTTPS non-www URL — Google ignores #fragment URLs -->
   <url>
     <loc>https://downsnap.in/</loc>
-    <lastmod>2026-06-04</lastmod>
+    <lastmod>2026-06-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
-    <image:image>
-      <image:loc>https://downsnap.in/logo.png</image:loc>
-      <image:title>DownSnap — Free Any Video Downloader Online</image:title>
-    </image:image>
-    <image:image>
-      <image:loc>https://downsnap.in/og-image.png</image:loc>
-      <image:title>DownSnap — Free Online Video Downloader for Facebook, Instagram, YouTube, TikTok</image:title>
-    </image:image>
+  </url>
+  <url>
+    <loc>https://downsnap.in/youtube-downloader</loc>
+    <lastmod>2026-06-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://downsnap.in/instagram-downloader</loc>
+    <lastmod>2026-06-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://downsnap.in/online-video-downloader</loc>
+    <lastmod>2026-06-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://downsnap.in/facebook-video-downloader</loc>
+    <lastmod>2026-06-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://downsnap.in/pinterest-video-downloader</loc>
+    <lastmod>2026-06-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
   </url>
 
 </urlset>

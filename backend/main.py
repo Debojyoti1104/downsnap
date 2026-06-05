@@ -16,7 +16,7 @@ import httpx
 import yt_dlp
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
@@ -99,6 +99,225 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ─────────────────────────────────────────────
+# SEO Landing Pages Config
+# ─────────────────────────────────────────────
+SEO_PAGES = {
+    "youtube-downloader": {
+        "title": "YouTube Video Downloader Free Online - DownSnap",
+        "description": "Download YouTube videos free online in HD. No app, no login, no watermark. Supports YouTube Shorts, 1080p & 4K. The fastest YouTube video downloader.",
+        "og_title": "YouTube Video Downloader - DownSnap",
+        "og_desc": "Download YouTube videos free in HD. YouTube Shorts, 1080p & 4K supported. No watermark, no app.",
+        "tw_title": "YouTube Video Downloader Free - DownSnap",
+        "tw_desc": "Download any YouTube video free in HD. Shorts, 1080p & 4K. No login needed.",
+        "h1": "YouTube Video Downloader",
+        "breadcrumb": "YouTube Downloader",
+    },
+    "instagram-downloader": {
+        "title": "Instagram Video & Photo Downloader - DownSnap",
+        "description": "Download Instagram Reels, posts, carousels & photos free online. No watermark, no login. Save any Instagram content in original quality instantly.",
+        "og_title": "Instagram Downloader - DownSnap",
+        "og_desc": "Download Instagram Reels, posts & photos free. No watermark, no login. Save any IG content instantly.",
+        "tw_title": "Instagram Downloader Free - DownSnap",
+        "tw_desc": "Download Instagram Reels & posts free. No watermark. Save any IG content instantly.",
+        "h1": "Instagram Video & Photo Downloader",
+        "breadcrumb": "Instagram Downloader",
+    },
+    "online-video-downloader": {
+        "title": "Online Video Downloader Free - DownSnap | 1800+ Sites",
+        "description": "Free online video downloader for YouTube, Instagram, Facebook, Pinterest, TikTok & 1800+ sites. Download any video in HD. No app, no login, no watermark.",
+        "og_title": "Online Video Downloader - DownSnap",
+        "og_desc": "Download any video from 1800+ sites free. YouTube, Instagram, Facebook, TikTok & more. HD quality, no watermark.",
+        "tw_title": "Online Video Downloader - DownSnap",
+        "tw_desc": "Free online video downloader for 1800+ sites. HD quality, no watermark, no login.",
+        "h1": "Online Video Downloader",
+        "breadcrumb": "Online Video Downloader",
+    },
+    "facebook-video-downloader": {
+        "title": "Facebook Video Downloader Free Online - DownSnap",
+        "description": "Download Facebook videos and Reels free online in HD. No watermark, no login. Save Facebook Watch videos, Reels & Stories instantly to your device.",
+        "og_title": "Facebook Video Downloader - DownSnap",
+        "og_desc": "Download Facebook videos & Reels free in HD. No watermark, no login. Save any FB video instantly.",
+        "tw_title": "Facebook Video Downloader - DownSnap",
+        "tw_desc": "Download Facebook videos & Reels free. HD quality, no watermark.",
+        "h1": "Facebook Video Downloader",
+        "breadcrumb": "Facebook Downloader",
+    },
+    "pinterest-video-downloader": {
+        "title": "Pinterest Video Downloader Free Online - DownSnap",
+        "description": "Download Pinterest videos and video pins free online in HD. No watermark, no login. Save any Pinterest video directly to your device instantly.",
+        "og_title": "Pinterest Video Downloader - DownSnap",
+        "og_desc": "Download Pinterest videos free in HD. No watermark, no login. Save any Pinterest pin video.",
+        "tw_title": "Pinterest Video Downloader - DownSnap",
+        "tw_desc": "Download Pinterest videos free. HD quality, no watermark.",
+        "h1": "Pinterest Video Downloader",
+        "breadcrumb": "Pinterest Downloader",
+    },
+}
+
+SEO_PAGE_ORDER = [
+    "youtube-downloader",
+    "instagram-downloader",
+    "online-video-downloader",
+    "facebook-video-downloader",
+    "pinterest-video-downloader",
+]
+
+
+# ─────────────────────────────────────────────
+# Redirect middleware — www→non-www, http→https, HSTS
+# ─────────────────────────────────────────────
+@app.middleware("http")
+async def seo_redirect_middleware(request: Request, call_next):
+    url = request.url
+    host = url.hostname or ""
+
+    # Redirect www.downsnap.in → downsnap.in
+    if host.startswith("www."):
+        canonical = url.replace(hostname=host.removeprefix("www."))
+        return RedirectResponse(str(canonical), status_code=301)
+
+    # Redirect HTTP → HTTPS (for Render or behind proxy)
+    if url.scheme == "http" and not host.startswith("localhost") and not host.startswith("127.0.0.1"):
+        canonical = url.replace(scheme="https")
+        return RedirectResponse(str(canonical), status_code=301)
+
+    response = await call_next(request)
+    # Add HSTS header for HTTPS enforcement
+    if url.scheme == "https" or os.getenv("RENDER_EXTERNAL_URL"):
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    response.headers["Content-Language"] = "en"
+    return response
+
+
+# ─────────────────────────────────────────────
+# SEO Landing page helper
+# ─────────────────────────────────────────────
+_frontend_index: Optional[str] = None
+
+
+def _load_index_html() -> str:
+    global _frontend_index
+    if _frontend_index is None:
+        idx_path = Path(__file__).parent.parent / "frontend" / "index.html"
+        _frontend_index = idx_path.read_text(encoding="utf-8")
+    return _frontend_index
+
+
+def _render_seo_page(page_key: str) -> str:
+    cfg = SEO_PAGES[page_key]
+    html = _load_index_html()
+    page_url = f"https://downsnap.in/{page_key}/"
+
+    html = re.sub(
+        r'<title>.*?</title>',
+        f'<title>{cfg["title"]}</title>',
+        html,
+    )
+    html = re.sub(
+        r'<meta name="description"[^>]*>',
+        f'<meta name="description" content=\'{cfg["description"]}\' />',
+        html,
+    )
+    html = re.sub(
+        r'<link rel="canonical"[^>]*>',
+        f'<link rel="canonical" href="{page_url}" />',
+        html,
+    )
+    html = re.sub(
+        r'<meta property="og:title"[^>]*>',
+        f'<meta property="og:title" content=\'{cfg["og_title"]}\' />',
+        html,
+    )
+    html = re.sub(
+        r'<meta property="og:description"[^>]*>',
+        f'<meta property="og:description" content=\'{cfg["og_desc"]}\' />',
+        html,
+    )
+    html = re.sub(
+        r'<meta property="og:url"[^>]*>',
+        f'<meta property="og:url" content="{page_url}" />',
+        html,
+    )
+    html = re.sub(
+        r'<meta name="twitter:title"[^>]*>',
+        f'<meta name="twitter:title" content=\'{cfg["tw_title"]}\' />',
+        html,
+    )
+    html = re.sub(
+        r'<meta name="twitter:description"[^>]*>',
+        f'<meta name="twitter:description" content=\'{cfg["tw_desc"]}\' />',
+        html,
+    )
+
+    # ── Inject page-specific CSS (hide irrelevant sections) ─────
+    hide_sections = [p for p in SEO_PAGES if p != page_key]
+    if page_key == "online-video-downloader":
+        hide_sections = []
+    hide_css = "".join(f"#{s} {{ display: none !important; }}\n" for s in hide_sections)
+    body_style = f"<style>\n{hide_css}</style>\n\n<body"
+
+    idx = html.find("</head>")
+    before = html[: idx + len("</head>")]
+    after = html[idx + len("</head>") :]
+    after = after.replace("<body>", f'<body data-page="{page_key}">', 1)
+    html = before + "\n" + body_style + after
+
+    # ── Hero content per page ─────────────────────────────────
+    HERO_CONTENT = {
+        "youtube-downloader": (
+            '<h1 id="hero-heading">\n'
+            '          YouTube Video Downloader Free Online &mdash;<br />Download in HD 1080p &amp; 4K\n'
+            '        </h1>\n'
+            '        <p class="hero-sub">\n'
+            '          <strong>Download YouTube videos</strong> free online in HD 1080p or 4K. Works with YouTube Shorts, playlists and any <code>youtube.com</code> or <code>youtu.be</code> link. No app, no login, no watermark.\n'
+            '        </p>'
+        ),
+        "instagram-downloader": (
+            '<h1 id="hero-heading">\n'
+            '          Instagram Reels &amp; Video Downloader Free &mdash;<br />No Watermark, No Login\n'
+            '        </h1>\n'
+            '        <p class="hero-sub">\n'
+            '          <strong>Download Instagram Reels, posts, carousels and photos</strong> for free. No watermark, no Instagram login. Works with <code>instagram.com/reel/</code> and <code>/p/</code> links.\n'
+            '        </p>'
+        ),
+        "online-video-downloader": (
+            '<h1 id="hero-heading">\n'
+            '          Free Online Video Downloader &mdash;<br />Download Any Video from 1800+ Sites\n'
+            '        </h1>\n'
+            '        <p class="hero-sub">\n'
+            '          Download <strong>any video from any website</strong> for free &mdash; YouTube, Instagram, Facebook, Pinterest, TikTok, Twitter/X, Kuaishou and <strong>1800+ sites</strong>. HD quality, no watermark, no login.\n'
+            '        </p>'
+        ),
+        "facebook-video-downloader": (
+            '<h1 id="hero-heading">\n'
+            '          Facebook Video Downloader Free Online &mdash;<br />Download Reels &amp; Videos in HD\n'
+            '        </h1>\n'
+            '        <p class="hero-sub">\n'
+            '          <strong>Download Facebook videos, Reels and Watch videos</strong> for free in HD. No watermark, no Facebook login. Works with <code>facebook.com</code> and <code>fb.watch</code> links.\n'
+            '        </p>'
+        ),
+        "pinterest-video-downloader": (
+            '<h1 id="hero-heading">\n'
+            '          Pinterest Video Downloader Free Online &mdash;<br />Save Pinterest Videos in HD\n'
+            '        </h1>\n'
+            '        <p class="hero-sub">\n'
+            '          <strong>Download Pinterest videos and video pins</strong> for free in HD. No watermark, no Pinterest login. Works with any <code>pinterest.com/pin/</code> URL.\n'
+            '        </p>'
+        ),
+    }
+
+    if page_key in HERO_CONTENT:
+        html = re.sub(
+            r'<h1 id="hero-heading">.*?</h1>\s*<p class="hero-sub">.*?</p>',
+            HERO_CONTENT[page_key],
+            html,
+            flags=re.DOTALL,
+        )
+
+    return html
 
 
 # ─────────────────────────────────────────────
@@ -711,9 +930,22 @@ async def health():
 
 
 # ─────────────────────────────────────────────
+# SEO Landing page routes (server-rendered, no JS dependency)
+# ─────────────────────────────────────────────
+_frontend_dir = Path(__file__).parent.parent / "frontend"
+
+
+@app.get("/{page}", response_class=HTMLResponse)
+async def seo_landing_page(page: str):
+    page = page.rstrip("/")
+    if page in SEO_PAGES:
+        return _render_seo_page(page)
+    return HTMLResponse(_load_index_html())
+
+
+# ─────────────────────────────────────────────
 # Static frontend (serves index.html + assets)
 # Mount AFTER all API routes so /api/* is never shadowed.
 # ─────────────────────────────────────────────
-_frontend_dir = Path(__file__).parent.parent / "frontend"
 if _frontend_dir.is_dir():
     app.mount("/", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
