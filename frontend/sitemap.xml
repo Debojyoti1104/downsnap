@@ -2,41 +2,60 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
 
+  <!-- ── HOME HUB ── -->
   <url>
     <loc>https://downsnap.in/</loc>
     <lastmod>2026-06-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
+
+  <!-- ── GLOBAL DOWNLOADER (USP — highest SEO priority) ── -->
   <url>
-    <loc>https://downsnap.in/youtube-downloader</loc>
+    <loc>https://downsnap.in/downloader.html</loc>
     <lastmod>2026-06-06</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <priority>1.0</priority>
   </url>
+
+  <!-- ── YOUTUBE (top traffic source per analytics) ── -->
   <url>
-    <loc>https://downsnap.in/instagram-downloader</loc>
+    <loc>https://downsnap.in/youtube.html</loc>
     <lastmod>2026-06-06</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <priority>0.95</priority>
   </url>
+
+  <!-- ── INSTAGRAM (2nd top source per analytics) ── -->
   <url>
-    <loc>https://downsnap.in/online-video-downloader</loc>
+    <loc>https://downsnap.in/instagram.html</loc>
     <lastmod>2026-06-06</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <priority>0.95</priority>
   </url>
+
+  <!-- ── FACEBOOK ── -->
   <url>
-    <loc>https://downsnap.in/facebook-video-downloader</loc>
+    <loc>https://downsnap.in/facebook.html</loc>
     <lastmod>2026-06-06</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.90</priority>
   </url>
+
+  <!-- ── PINTEREST (growing +5-10% per analytics) ── -->
   <url>
-    <loc>https://downsnap.in/pinterest-video-downloader</loc>
+    <loc>https://downsnap.in/pinterest.html</loc>
     <lastmod>2026-06-06</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- ── TIKTOK ── -->
+  <url>
+    <loc>https://downsnap.in/tiktok.html</loc>
+    <lastmod>2026-06-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
   </url>
 
 </urlset>

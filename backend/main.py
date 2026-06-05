@@ -112,28 +112,34 @@ SEO_PAGES = {
         "og_desc": "Download YouTube videos free in HD. YouTube Shorts, 1080p & 4K supported. No watermark, no app.",
         "tw_title": "YouTube Video Downloader Free - DownSnap",
         "tw_desc": "Download any YouTube video free in HD. Shorts, 1080p & 4K. No login needed.",
-        "h1": "YouTube Video Downloader",
+        "h1": "YouTube Video Downloader &mdash; HD, No Watermark, Free",
+        "hero_sub": "Paste any YouTube link below and download in seconds. Works with YouTube Shorts, playlists and regular videos. 1080p HD &amp; 4K supported.",
+        "placeholder": "Paste YouTube video or Shorts URL here...",
         "breadcrumb": "YouTube Downloader",
     },
     "instagram-downloader": {
-        "title": "Instagram Video & Photo Downloader - DownSnap",
+        "title": "Instagram Video & Photo Downloader Free - DownSnap",
         "description": "Download Instagram Reels, posts, carousels & photos free online. No watermark, no login. Save any Instagram content in original quality instantly.",
         "og_title": "Instagram Downloader - DownSnap",
         "og_desc": "Download Instagram Reels, posts & photos free. No watermark, no login. Save any IG content instantly.",
         "tw_title": "Instagram Downloader Free - DownSnap",
         "tw_desc": "Download Instagram Reels & posts free. No watermark. Save any IG content instantly.",
-        "h1": "Instagram Video & Photo Downloader",
+        "h1": "Instagram Video &amp; Photo Downloader &mdash; No Watermark",
+        "hero_sub": "Paste any Instagram link below. Works with Reels, posts, carousels and IGTV. Download in original quality with zero watermark.",
+        "placeholder": "Paste Instagram Reel or Post URL here...",
         "breadcrumb": "Instagram Downloader",
     },
     "online-video-downloader": {
-        "title": "Online Video Downloader Free - DownSnap | 1800+ Sites",
-        "description": "Free online video downloader for YouTube, Instagram, Facebook, Pinterest, TikTok & 1800+ sites. Download any video in HD. No app, no login, no watermark.",
-        "og_title": "Online Video Downloader - DownSnap",
-        "og_desc": "Download any video from 1800+ sites free. YouTube, Instagram, Facebook, TikTok & more. HD quality, no watermark.",
+        "title": "Online Video Downloader Free - DownSnap | Download Any Video from Any Website",
+        "description": "Free online video downloader for YouTube, Instagram, Facebook, Pinterest, TikTok & 1800+ sites. Download any video from any website in HD. No app, no login, no watermark.",
+        "og_title": "Online Video Downloader - DownSnap | Any Website",
+        "og_desc": "Download any video from 1800+ sites free. YouTube, Instagram, Facebook, TikTok & more. HD quality, no watermark, no login.",
         "tw_title": "Online Video Downloader - DownSnap",
-        "tw_desc": "Free online video downloader for 1800+ sites. HD quality, no watermark, no login.",
-        "h1": "Online Video Downloader",
-        "breadcrumb": "Online Video Downloader",
+        "tw_desc": "Free online video downloader for 1800+ sites. HD quality, no watermark, no login. Download any video from any website.",
+        "h1": "Free Online Video Downloader &mdash; Download Any Video from 1800+ Sites",
+        "hero_sub": "The best <strong>any video downloader</strong> — works with YouTube, Instagram, Facebook, Pinterest, TikTok, Twitter/X, Kuaishou and <strong>1800+ sites</strong>. HD quality, no watermark, no login.",
+        "placeholder": "Paste any video URL from any website...",
+        "breadcrumb": "Any Video Downloader",
     },
     "facebook-video-downloader": {
         "title": "Facebook Video Downloader Free Online - DownSnap",
@@ -142,7 +148,9 @@ SEO_PAGES = {
         "og_desc": "Download Facebook videos & Reels free in HD. No watermark, no login. Save any FB video instantly.",
         "tw_title": "Facebook Video Downloader - DownSnap",
         "tw_desc": "Download Facebook videos & Reels free. HD quality, no watermark.",
-        "h1": "Facebook Video Downloader",
+        "h1": "Facebook Video Downloader &mdash; Download Reels &amp; Videos in HD",
+        "hero_sub": "Paste any Facebook link below. Works with Reels, Watch videos, Stories and regular posts. Download in HD with no watermark.",
+        "placeholder": "Paste Facebook video or Reel URL here...",
         "breadcrumb": "Facebook Downloader",
     },
     "pinterest-video-downloader": {
@@ -152,17 +160,19 @@ SEO_PAGES = {
         "og_desc": "Download Pinterest videos free in HD. No watermark, no login. Save any Pinterest pin video.",
         "tw_title": "Pinterest Video Downloader - DownSnap",
         "tw_desc": "Download Pinterest videos free. HD quality, no watermark.",
-        "h1": "Pinterest Video Downloader",
+        "h1": "Pinterest Video Downloader &mdash; Save Pinterest Videos in HD",
+        "hero_sub": "Paste any Pinterest link below. Works with video pins and idea pins. Download in original HD quality with no watermark.",
+        "placeholder": "Paste Pinterest video URL here...",
         "breadcrumb": "Pinterest Downloader",
     },
 }
 
 SEO_PAGE_ORDER = [
+    "online-video-downloader",
     "youtube-downloader",
     "instagram-downloader",
-    "online-video-downloader",
-    "facebook-video-downloader",
     "pinterest-video-downloader",
+    "facebook-video-downloader",
 ]
 
 
@@ -252,70 +262,127 @@ def _render_seo_page(page_key: str) -> str:
         html,
     )
 
-    # ── Inject page-specific CSS (hide irrelevant sections) ─────
-    hide_sections = [p for p in SEO_PAGES if p != page_key]
-    if page_key == "online-video-downloader":
-        hide_sections = []
-    hide_css = "".join(f"#{s} {{ display: none !important; }}\n" for s in hide_sections)
-    body_style = f"<style>\n{hide_css}</style>\n\n<body"
-
-    idx = html.find("</head>")
-    before = html[: idx + len("</head>")]
-    after = html[idx + len("</head>") :]
-    after = after.replace("<body>", f'<body data-page="{page_key}">', 1)
-    html = before + "\n" + body_style + after
-
-    # ── Hero content per page ─────────────────────────────────
-    HERO_CONTENT = {
-        "youtube-downloader": (
-            '<h1 id="hero-heading">\n'
-            '          YouTube Video Downloader Free Online &mdash;<br />Download in HD 1080p &amp; 4K\n'
-            '        </h1>\n'
-            '        <p class="hero-sub">\n'
-            '          <strong>Download YouTube videos</strong> free online in HD 1080p or 4K. Works with YouTube Shorts, playlists and any <code>youtube.com</code> or <code>youtu.be</code> link. No app, no login, no watermark.\n'
-            '        </p>'
-        ),
-        "instagram-downloader": (
-            '<h1 id="hero-heading">\n'
-            '          Instagram Reels &amp; Video Downloader Free &mdash;<br />No Watermark, No Login\n'
-            '        </h1>\n'
-            '        <p class="hero-sub">\n'
-            '          <strong>Download Instagram Reels, posts, carousels and photos</strong> for free. No watermark, no Instagram login. Works with <code>instagram.com/reel/</code> and <code>/p/</code> links.\n'
-            '        </p>'
-        ),
-        "online-video-downloader": (
-            '<h1 id="hero-heading">\n'
-            '          Free Online Video Downloader &mdash;<br />Download Any Video from 1800+ Sites\n'
-            '        </h1>\n'
-            '        <p class="hero-sub">\n'
-            '          Download <strong>any video from any website</strong> for free &mdash; YouTube, Instagram, Facebook, Pinterest, TikTok, Twitter/X, Kuaishou and <strong>1800+ sites</strong>. HD quality, no watermark, no login.\n'
-            '        </p>'
-        ),
-        "facebook-video-downloader": (
-            '<h1 id="hero-heading">\n'
-            '          Facebook Video Downloader Free Online &mdash;<br />Download Reels &amp; Videos in HD\n'
-            '        </h1>\n'
-            '        <p class="hero-sub">\n'
-            '          <strong>Download Facebook videos, Reels and Watch videos</strong> for free in HD. No watermark, no Facebook login. Works with <code>facebook.com</code> and <code>fb.watch</code> links.\n'
-            '        </p>'
-        ),
-        "pinterest-video-downloader": (
-            '<h1 id="hero-heading">\n'
-            '          Pinterest Video Downloader Free Online &mdash;<br />Save Pinterest Videos in HD\n'
-            '        </h1>\n'
-            '        <p class="hero-sub">\n'
-            '          <strong>Download Pinterest videos and video pins</strong> for free in HD. No watermark, no Pinterest login. Works with any <code>pinterest.com/pin/</code> URL.\n'
-            '        </p>'
-        ),
+    # ── Map SEO keys to actual HTML section IDs ────────────
+    SECTION_ID_MAP = {
+        "youtube-downloader": "youtube-downloader",
+        "instagram-downloader": "instagram-downloader",
+        "online-video-downloader": "online-video-downloader",
+        "facebook-video-downloader": "facebook-downloader",
+        "pinterest-video-downloader": "pinterest-downloader",
     }
 
-    if page_key in HERO_CONTENT:
+    is_platform_page = page_key != "online-video-downloader"
+
+    # ── Strip out other platform sections ───────────────────
+    for other in SEO_PAGES:
+        if other == page_key:
+            continue
+        other_id = SECTION_ID_MAP[other]
         html = re.sub(
-            r'<h1 id="hero-heading">.*?</h1>\s*<p class="hero-sub">.*?</p>',
-            HERO_CONTENT[page_key],
+            rf'<section\s+[^>]*?id="{re.escape(other_id)}"[^>]*>.*?</section>',
+            "",
             html,
             flags=re.DOTALL,
         )
+        # Remove nav link pointing to this section
+        html = re.sub(
+            rf'<a\s+[^>]*?href="#{re.escape(other_id)}"[^>]*>.*?</a>',
+            "",
+            html,
+        )
+
+    # ── Remove tab bar on platform pages ────────────────────
+    if is_platform_page:
+        html = re.sub(
+            r'<div\s+id="tab-bar"[^>]*>.*?</div>',
+            "",
+            html,
+            flags=re.DOTALL,
+        )
+        html = re.sub(
+            r'<div\s+id="sub-options-container"[^>]*>.*?</div>',
+            "",
+            html,
+            flags=re.DOTALL,
+        )
+
+    # ── Add minimal inline style for direct input card ──────
+    if is_platform_page:
+        style_block = (
+            "<style>\n"
+            ".direct-input-card { display: block !important; }\n"
+            "#url-input, #fetch-btn, .eyebrow, .trust-bar { display: none !important; }\n"
+            "</style>\n"
+        )
+        html = html.replace("</head>", style_block + "</head>", 1)
+
+    html = html.replace("<body>", f'<body data-page="{page_key}" data-platform="{is_platform_page}">', 1)
+
+    # ── Inject dedicated input card for platform pages ───────
+    if is_platform_page:
+        direct_card = (
+            f'<div class="card direct-input-card animate-in delay-1" role="region" aria-label="{cfg["breadcrumb"]}">\n'
+            f'  <div class="card-body">\n'
+            f'    <div class="input-wrap">\n'
+            f'      <div class="input-icon" aria-hidden="true">\n'
+            f'        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">\n'
+            f'          <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>\n'
+            f'        </svg>\n'
+            f'      </div>\n'
+            f'      <input id="url-input-direct" type="url" inputmode="url" autocomplete="off" spellcheck="false"\n'
+            f'        placeholder="{cfg["placeholder"]}"\n'
+            f'        aria-label="{cfg["placeholder"]}" />\n'
+            f'    </div>\n'
+            f'    <button id="fetch-btn-direct" type="button" aria-label="Download media from URL">\n'
+            f'      <svg id="fetch-icon-direct" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\n'
+            f'        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />\n'
+            f'      </svg>\n'
+            f'      <div id="fetch-spinner-direct" class="spinner hidden" aria-hidden="true"></div>\n'
+            f'      <span id="fetch-btn-text-direct">Download Free</span>\n'
+            f'    </button>\n'
+            f'    <div id="error-box-direct" role="alert" aria-live="polite">\n'
+            f'      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\n'
+            f'        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>\n'
+            f'      </svg>\n'
+            f'      <span id="error-text-direct"></span>\n'
+            f'    </div>\n'
+            f'  </div>\n'
+            f'</div>'
+        )
+        html = html.replace(
+            'aria-label="Video downloader tool">',
+            'aria-label="Video downloader tool">\n' + direct_card,
+        )
+
+    # ── Hero heading + subtitle per page ─────────────────────
+    hero_block = (
+        f'<h1 id="hero-heading">{cfg["h1"]}</h1>\n'
+        f'        <p class="hero-sub">{cfg["hero_sub"]}</p>'
+    )
+    html = re.sub(
+        r'<h1 id="hero-heading">.*?</h1>\s*<p class="hero-sub">.*?</p>',
+        hero_block,
+        html,
+        flags=re.DOTALL,
+    )
+
+    # ── Breadcrumb JSON-LD ────────────────────────────────────
+    breadcrumb_json = (
+        '{\n'
+        '    "@context": "https://schema.org",\n'
+        '    "@type": "BreadcrumbList",\n'
+        '    "itemListElement": [\n'
+        f'      {{ "@type": "ListItem", "position": 1, "name": "Home", "item": "https://downsnap.in/" }},\n'
+        f'      {{ "@type": "ListItem", "position": 2, "name": "{cfg["breadcrumb"]}", "item": "{page_url}" }}\n'
+        '    ]\n'
+        '  }'
+    )
+    html = re.sub(
+        r'\{\s*"@context":\s*"https://schema\.org",\s*"@type":\s*"BreadcrumbList",\s*"itemListElement":\s*\[.*?\]\s*\}',
+        breadcrumb_json,
+        html,
+        flags=re.DOTALL,
+    )
 
     return html
 
@@ -935,12 +1002,14 @@ async def health():
 _frontend_dir = Path(__file__).parent.parent / "frontend"
 
 
-@app.get("/{page}", response_class=HTMLResponse)
-async def seo_landing_page(page: str):
-    page = page.rstrip("/")
-    if page in SEO_PAGES:
-        return _render_seo_page(page)
-    return HTMLResponse(_load_index_html())
+for _page_key in SEO_PAGES:
+
+    def _make_handler(key: str):
+        async def _handler():
+            return _render_seo_page(key)
+        return _handler
+
+    app.get(f"/{_page_key}", response_class=HTMLResponse)(_make_handler(_page_key))
 
 
 # ─────────────────────────────────────────────
