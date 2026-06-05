@@ -1092,7 +1092,14 @@ footer {
   .container, .container-sm, .container-md { padding: 0 16px; }
   .hero { padding: 48px 0 32px; }
   .tab-btn span.tab-label { display: none; }
-  .nav-links { display: none; }
+  .nav-links { 
+    display: flex; 
+    overflow-x: auto; 
+    white-space: nowrap; 
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; 
+  }
+  .nav-links::-webkit-scrollbar { display: none; }
   .section { padding: 56px 0; }
   .card-body { padding: 14px; }
   .platform-feature-grid { grid-template-columns: 1fr; }
