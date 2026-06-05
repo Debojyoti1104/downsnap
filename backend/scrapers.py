@@ -1,6 +1,16 @@
+import json
+import re
 import time
-import httpx
 from typing import Optional
+
+import httpx
+
+try:
+    from curl_cffi import requests as curl_requests
+    HAS_CURL_CFFI = True
+except ImportError:
+    HAS_CURL_CFFI = False
+
 
 # ─────────────────────────────────────────────
 # Base Scraper Class
@@ -21,7 +31,186 @@ class BaseScraper:
         return time.time() > self.cooldown_until
 
 # ─────────────────────────────────────────────
-# 1. Cobalt API (Public Instances)
+# 1. Instagram Direct API (via curl-cffi impersonation)
+# Fetches Instagram's GraphQL API directly using Chrome TLS fingerprint,
+# bypassing bot detection without needing any login or cookies.
+# curl-cffi is already in requirements.txt.
+# ─────────────────────────────────────────────
+class InstagramDirectScraper(BaseScraper):
+    name = "instagram_direct"
+
+    async def fetch(self, url: str) -> Optional[list[dict]]:
+        if not HAS_CURL_CFFI:
+            return None
+
+        shortcode_match = re.search(r'instagram\.com/(?:p|reel|tv)/([a-zA-Z0-9_-]+)', url)
+        if not shortcode_match:
+            return None
+        shortcode = shortcode_match.group(1)
+
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self._sync_fetch, shortcode, url)
+            return result
+        except Exception as e:
+            print(f"[{self.name}] Failed: {e}")
+            return None
+
+    def _sync_fetch(self, shortcode: str, source_url: str) -> Optional[list[dict]]:
+        session = curl_requests.Session()
+        session.impersonate = 'chrome124'
+
+        # Step 1: Fetch the post page to get CSRF token + session cookies
+        page = session.get(source_url)
+        if page.status_code != 200:
+            return None
+
+        csrf = dict(session.cookies).get('csrftoken', '')
+
+        # Step 2: Try GraphQL API with doc_id
+        variables = {
+            'shortcode': shortcode,
+            'child_comment_count': 3,
+            'fetch_comment_count': 40,
+            'parent_comment_count': 24,
+            'has_threaded_comments': True,
+        }
+
+        graphql_resp = session.get(
+            'https://www.instagram.com/graphql/query/',
+            params={
+                'doc_id': '8845758582119845',
+                'variables': json.dumps(variables, separators=(',', ':')),
+            },
+            headers={
+                'X-CSRFToken': csrf,
+                'X-Requested-With': 'XMLHttpRequest',
+                'Referer': source_url,
+                'Accept': 'application/json',
+            },
+        )
+
+        if graphql_resp.status_code == 200:
+            data = graphql_resp.json()
+            media = data.get('data', {}).get('xdt_shortcode_media')
+            if media:
+                items = self._parse_media(media)
+                if items:
+                    return items
+
+        # Step 3: Fallback to embed page scraping
+        try:
+            embed = session.get(f'{source_url}embed/')
+            if embed.status_code == 200:
+                html = embed.text
+                items = self._parse_embed(html)
+                if items:
+                    return items
+        except Exception:
+            pass
+
+        return None
+
+    def _parse_media(self, media: dict) -> list[dict]:
+        items = []
+
+        # Check for carousel (sidecar)
+        sidecar = media.get('edge_sidecar_to_children', {}).get('edges')
+        if sidecar:
+            for edge in sidecar:
+                node = edge.get('node', {})
+                items.append(self._media_node_to_item(node))
+            if items:
+                return items
+
+        # Single post
+        item = self._media_node_to_item(media)
+        if item.get('url'):
+            items.append(item)
+
+        return items
+
+    def _media_node_to_item(self, node: dict) -> dict:
+        video_url = node.get('video_url')
+        display_url = node.get('display_url') or node.get('display_src', '')
+        is_video = node.get('is_video', False) or bool(video_url)
+
+        if is_video and video_url:
+            return {
+                'type': 'video',
+                'url': video_url,
+                'title': 'Instagram Media',
+                'thumbnail': display_url,
+            }
+
+        if display_url:
+            return {
+                'type': 'image',
+                'url': display_url,
+                'title': 'Instagram Media',
+                'thumbnail': display_url,
+            }
+
+        return {'type': 'image', 'url': '', 'title': 'Instagram Media', 'thumbnail': None}
+
+    def _parse_embed(self, html: str) -> Optional[list[dict]]:
+        # Look for video_url in the embed HTML
+        video_urls = re.findall(r'"video_url"\s*:\s*"([^"]+)"', html)
+        display_urls = re.findall(r'"display_url"\s*:\s*"([^"]+)"', html)
+
+        if not video_urls and not display_urls:
+            return None
+
+        # Unescape JSON unicode sequences
+        def unescape(s):
+            return s.encode().decode('unicode-escape') if '\\u' in s else s
+
+        items = []
+        # If we have both, pair them (for carousels) or all videos then all images
+        if video_urls and display_urls:
+            # Try to detect if it's a carousel
+            if 'edge_sidecar_to_children' in html:
+                nodes = re.findall(
+                    r'\{"__typename"[^}]+"video_url"\s*:\s*"([^"]*)"[^}]+"display_url"\s*:\s*"([^"]*)"[^}]+"is_video"\s*:\s*(true|false)',
+                    html
+                )
+                if not nodes:
+                    nodes = re.findall(
+                        r'\{"__typename"[^}]+"display_url"\s*:\s*"([^"]*)"[^}]+"is_video"\s*:\s*(true|false)',
+                        html
+                    )
+                for node in nodes:
+                    if len(node) == 3:
+                        v_url, d_url, is_v = node
+                        if is_v == 'true' and v_url:
+                            items.append({'type': 'video', 'url': unescape(v_url), 'title': 'Instagram Media', 'thumbnail': unescape(d_url)})
+                        elif d_url:
+                            items.append({'type': 'image', 'url': unescape(d_url), 'title': 'Instagram Media', 'thumbnail': unescape(d_url)})
+                    elif len(node) == 2:
+                        d_url, is_v = node
+                        items.append({'type': 'image', 'url': unescape(d_url), 'title': 'Instagram Media', 'thumbnail': unescape(d_url)})
+                if items:
+                    return items
+
+            # Fallback: pair by index
+            for i, v in enumerate(video_urls):
+                thumb = display_urls[i] if i < len(display_urls) else None
+                items.append({'type': 'video', 'url': unescape(v), 'title': 'Instagram Media', 'thumbnail': unescape(thumb) if thumb else None})
+            for i in range(len(video_urls), len(display_urls)):
+                items.append({'type': 'image', 'url': unescape(display_urls[i]), 'title': 'Instagram Media', 'thumbnail': unescape(display_urls[i])})
+        elif video_urls:
+            for v in video_urls:
+                items.append({'type': 'video', 'url': unescape(v), 'title': 'Instagram Media', 'thumbnail': None})
+        elif display_urls:
+            for d in display_urls:
+                items.append({'type': 'image', 'url': unescape(d), 'title': 'Instagram Media', 'thumbnail': unescape(d)})
+
+        return items if items else None
+
+
+# ─────────────────────────────────────────────
+# 2. Cobalt API (Public Instances)
 # Cobalt is an open-source downloader. People host public instances.
 # It doesn't have terms of service blocking us from hitting public nodes.
 # ─────────────────────────────────────────────
@@ -136,7 +325,9 @@ class SaveIGScraper(BaseScraper):
 
                 html = data.get("data", "")
                 # Extract HD/SD download links from the response HTML
-                matches = re.findall(r'href=["\x27](https://[^"\x27]+)["\x27][^>]*>[^<]*(?:Download|HD|SD)', html, re.IGNORECASE)
+                matches = re.findall(r'href=["\x27](https://[^"\x27]+\.(?:mp4|jpg|jpeg|png)[^"\x27]*)["\x27]', html, re.IGNORECASE)
+                if not matches:
+                    matches = re.findall(r'href=["\x27](https://[^"\x27]+)["\x27][^>]*>[^<]*(?:Download|HD|SD)', html, re.IGNORECASE)
                 items = []
                 seen = set()
                 for link in matches:
@@ -189,9 +380,9 @@ class SnapInstaScraper(BaseScraper):
                     return None
 
                 import re
-                # Match direct CDN URLs in download links
+                # Match direct media URLs in download links (broader pattern)
                 matches = re.findall(
-                    r'href=["\x27](https://(?:cdn|scontent|video)[^"\x27]+\.(?:mp4|jpg|jpeg|png)[^"\x27]*)["\x27]',
+                    r'href=["\x27](https://[^"\x27]+\.(?:mp4|jpg|jpeg|png)(?:[?"\x27][^"\x27]*)?)["\x27]',
                     text, re.IGNORECASE
                 )
                 items = []
@@ -218,8 +409,10 @@ class SnapInstaScraper(BaseScraper):
 
 # ─────────────────────────────────────────────
 # Engine Controller
+# Order: direct API (most reliable) → third-party scrapers
 # ─────────────────────────────────────────────
 SCRAPERS = [
+    InstagramDirectScraper(),
     CobaltScraper(),
     SaveIGScraper(),
     SnapInstaScraper(),

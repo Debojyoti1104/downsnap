@@ -211,8 +211,8 @@ function switchTab(tabKey) {
     btn.setAttribute('aria-selected', String(isActive));
   });
 
-  dom.urlInput.placeholder = TAB_CONFIG[tabKey].placeholderHint;
   renderSubOptions(tabKey);
+  updatePlaceholder();
   clearResults();
 }
 
@@ -247,6 +247,52 @@ function selectSubOption(clicked) {
   dom.subOptions.querySelectorAll('.sub-opt-btn').forEach((btn) => {
     btn.dataset.selected = btn === clicked ? 'true' : 'false';
   });
+  updatePlaceholder();
+}
+
+function getSelectedSubOption() {
+  const selected = dom.subOptions.querySelector('.sub-opt-btn[data-selected="true"]');
+  return selected ? selected.id : null;
+}
+
+function updatePlaceholder() {
+  const tab = TAB_CONFIG[state.activeTab];
+  if (!tab || !tab.subOptions.length) return;
+  const sel = getSelectedSubOption();
+  if (!sel) return;
+  if (state.activeTab === 'instagram') {
+    if (sel === 'opt-ig-post') {
+      dom.urlInput.placeholder = 'e.g. https://www.instagram.com/p/Cx7p8uByfeI/';
+    } else if (sel === 'opt-ig-reel') {
+      dom.urlInput.placeholder = 'e.g. https://www.instagram.com/reel/DCr8uByfeI/';
+    }
+  } else if (state.activeTab === 'facebook') {
+    if (sel === 'opt-fb-reel') {
+      dom.urlInput.placeholder = 'e.g. https://www.facebook.com/reel/123456789';
+    } else if (sel === 'opt-fb-video') {
+      dom.urlInput.placeholder = 'e.g. https://www.facebook.com/watch?v=123456789';
+    }
+  }
+}
+
+function validateInstagramUrl(url, subOption) {
+  if (subOption === 'opt-ig-post' && !/instagram\.com\/p\//i.test(url)) {
+    return 'This link doesn\'t appear to be an Instagram post. Make sure the URL contains /p/ — for example: https://www.instagram.com/p/Cx7p8uByfeI/';
+  }
+  if (subOption === 'opt-ig-reel' && !/instagram\.com\/reel\//i.test(url)) {
+    return 'This link doesn\'t appear to be an Instagram Reel. Make sure the URL contains /reel/ — for example: https://www.instagram.com/reel/DCr8uByfeI/';
+  }
+  return null;
+}
+
+function validateFacebookUrl(url, subOption) {
+  if (subOption === 'opt-fb-reel' && !/facebook\.com\/reel\//i.test(url) && !/fb\.watch\//i.test(url)) {
+    return 'This link doesn\'t appear to be a Facebook Reel. Make sure the URL contains /reel/ — for example: https://www.facebook.com/reel/123456789';
+  }
+  if (subOption === 'opt-fb-video' && !/facebook\.com\/(watch|reel)/i.test(url) && !/fb\.watch\//i.test(url)) {
+    return 'This link doesn\'t appear to be a Facebook video. Make sure the URL is a video link — for example: https://www.facebook.com/watch?v=123456789';
+  }
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -443,6 +489,15 @@ async function handleFetch() {
   if (!rawUrl.match(/^https?:\/\//i) && !rawUrl.includes('.')) {
     showError("That doesn't look like a valid URL. Make sure to include the full link.");
     return;
+  }
+
+  const subOption = getSelectedSubOption();
+  if (state.activeTab === 'instagram' && subOption) {
+    const igErr = validateInstagramUrl(rawUrl, subOption);
+    if (igErr) { showError(igErr); return; }
+  } else if (state.activeTab === 'facebook' && subOption) {
+    const fbErr = validateFacebookUrl(rawUrl, subOption);
+    if (fbErr) { showError(fbErr); return; }
   }
 
   setLoading(true);

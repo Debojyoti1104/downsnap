@@ -290,6 +290,14 @@ class FetchResponse(BaseModel):
 # ─────────────────────────────────────────────
 # Info extraction helpers
 # ─────────────────────────────────────────────
+def _has_video_formats(formats: list[dict]) -> bool:
+    """Check if any format in the list has a video codec."""
+    return any(
+        f.get("vcodec") not in (None, "none", "") and f.get("url")
+        for f in formats
+    )
+
+
 def _build_media_item_from_entry(entry: dict) -> MediaItem:
     """
     Convert a single yt-dlp info dict into a MediaItem.
@@ -304,18 +312,23 @@ def _build_media_item_from_entry(entry: dict) -> MediaItem:
 
     # ── Strategy 1: formats array (most videos) ──────────────
     if entry.get("formats"):
-        media_type = "video"
+        if _has_video_formats(entry["formats"]):
+            media_type = "video"
+        elif any(f.get("acodec") not in (None, "none", "") for f in entry["formats"] if f.get("url")):
+            media_type = "video"
         media_url = extract_best_format(entry["formats"])
 
     # ── Strategy 2: requested_formats (yt-dlp best-pick) ─────
     if not media_url and entry.get("requested_formats"):
-        media_type = "video"
+        if _has_video_formats(entry["requested_formats"]):
+            media_type = "video"
+        elif any(f.get("acodec") not in (None, "none", "") for f in entry["requested_formats"] if f.get("url")):
+            media_type = "video"
         media_url = extract_best_format(entry["requested_formats"])
 
     # ── Strategy 3: direct url field ─────────────────────────
     if not media_url and entry.get("url"):
         media_url = entry["url"]
-        # Classify as video if it has duration or an explicit vcodec
         if entry.get("duration") or entry.get("vcodec") not in (None, "none", ""):
             media_type = "video"
         else:
@@ -324,7 +337,6 @@ def _build_media_item_from_entry(entry: dict) -> MediaItem:
     # ── Strategy 4: thumbnails array ─────────────────────────
     if not media_url:
         thumbs = entry.get("thumbnails") or []
-        # Prefer the highest-resolution thumbnail
         valid = [t for t in thumbs if t.get("url")]
         if valid:
             best_thumb = max(valid, key=lambda t: (t.get("width") or 0) * (t.get("height") or 0))
@@ -367,14 +379,14 @@ def run_yt_dlp(url: str) -> dict:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
         return info or {}
-    except yt_dlp.utils.DownloadError as first_exc:
-        err_str = str(first_exc)
-        # Only retry for YouTube player response errors; re-raise everything else
+    except yt_dlp.utils.DownloadError as exc:
+        err_str = str(exc)
+
+        # ── YouTube retry with individual clients ──────────────────────
         if not is_youtube or "player response" not in err_str.lower():
             raise
 
-        # ── Retry: try each client individually ──────────────────────────
-        last_exc = first_exc
+        last_exc = exc
         for client in _YT_PLAYER_CLIENTS:
             retry_opts = dict(opts)
             retry_opts["extractor_args"] = {
@@ -416,9 +428,12 @@ async def fetch_info(payload: FetchRequest):
         # ── All messages here are plain English, user-facing — no dev jargon ──
 
         # Login / private content → try Hydra fallback first (for Instagram)
+        # "logged" matches "logged-in" / "logged in"
+        # "empty media" matches "instagram sent an empty media response"
         if any(kw in detail for kw in [
-            "private", "login", "sign in", "sign-in", "authentication",
-            "cookies", "account", "members only"
+            "private", "login", "logged", "sign in", "sign-in",
+            "authentication", "cookies", "account", "members only",
+            "empty media",
         ]):
             info = {}  # let the empty-results path trigger Hydra for Instagram
 
@@ -569,6 +584,16 @@ async def fetch_info(payload: FetchRequest):
                     thumbnail=media_objects[0].thumbnail,
                     media=media_objects,
                 )
+
+        if platform == "instagram":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "no_media",
+                    "message": "Instagram requires authentication to access this post.",
+                    "hint": "You can create a cookies.txt file to enable Instagram downloads. See README for instructions, or try the post in your browser first to make sure it's publicly accessible.",
+                },
+            )
 
         raise HTTPException(
             status_code=404,
