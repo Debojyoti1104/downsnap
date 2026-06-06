@@ -14,7 +14,11 @@ from typing import Optional
 
 import httpx
 import yt_dlp
-from yt_dlp.networking.impersonate import ImpersonateTarget
+try:
+    from yt_dlp.networking.impersonate import ImpersonateTarget
+    _IMPERSONATE_TARGET = ImpersonateTarget.from_str("chrome")
+except Exception:
+    _IMPERSONATE_TARGET = None
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -440,10 +444,6 @@ YDL_OPTS_BASE: dict = {
     "skip_download": True,
     "noplaylist": False,
     "http_headers": SPOOF_HEADERS,
-    # Browser impersonation: use curl-cffi to mimic Chrome's TLS fingerprint.
-    # This is the single most effective way to bypass bot detection on datacenter IPs
-    # without needing cookies. curl-cffi is already in requirements.txt.
-    "impersonate": ImpersonateTarget.from_str("chrome"),
     "extractor_args": {
         "instagram": {"max_comments": ["0"]},
         "facebook": {},
@@ -454,6 +454,15 @@ YDL_OPTS_BASE: dict = {
         },
     },
 }
+
+# Browser impersonation: use curl-cffi to mimic Chrome's TLS fingerprint.
+# This is the single most effective way to bypass bot detection on datacenter IPs
+# without needing cookies. Only enabled if curl-cffi + yt-dlp support it.
+if _IMPERSONATE_TARGET is not None:
+    YDL_OPTS_BASE["impersonate"] = _IMPERSONATE_TARGET
+    logger.info("[yt-dlp] Browser impersonation enabled (chrome)")
+else:
+    logger.info("[yt-dlp] Browser impersonation not available — curl-cffi may be missing")
 
 # Apply cookies to bypass age restrictions and bot detection
 if os.path.exists("cookies.txt"):
