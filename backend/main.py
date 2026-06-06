@@ -399,11 +399,22 @@ SPOOF_HEADERS = {
     "Accept": "*/*",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
-    "Referer": "https://www.instagram.com/",
     "Sec-Fetch-Dest": "video",
     "Sec-Fetch-Mode": "no-cors",
     "Sec-Fetch-Site": "cross-site",
 }
+
+
+def _make_headers_for_url(url: str) -> dict:
+    """Return a copy of SPOOF_HEADERS with a Referer matching the target site."""
+    headers = dict(SPOOF_HEADERS)
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        headers["Referer"] = f"{parsed.scheme}://{parsed.netloc}/"
+    except Exception:
+        headers["Referer"] = "https://www.google.com/"
+    return headers
 
 # Minimal URL sanity check — just needs a host with at least one dot.
 # We deliberately allow ALL domains so every yt-dlp-supported site works.
@@ -428,6 +439,10 @@ YDL_OPTS_BASE: dict = {
     "skip_download": True,
     "noplaylist": False,
     "http_headers": SPOOF_HEADERS,
+    # Browser impersonation: use curl-cffi to mimic Chrome's TLS fingerprint.
+    # This is the single most effective way to bypass bot detection on datacenter IPs
+    # without needing cookies. curl-cffi is already in requirements.txt.
+    "impersonate": "chrome124",
     "extractor_args": {
         "instagram": {"max_comments": ["0"]},
         "facebook": {},
@@ -658,6 +673,8 @@ def run_yt_dlp(url: str) -> dict:
     opts = dict(YDL_OPTS_BASE)
     # Deep-copy extractor_args so mutations don't bleed between calls
     opts["extractor_args"] = {k: dict(v) for k, v in YDL_OPTS_BASE["extractor_args"].items()}
+    # Set dynamic Referer header matching the target site
+    opts["http_headers"] = _make_headers_for_url(url)
 
     is_youtube = "youtube.com" in url or "youtu.be" in url
 
@@ -856,20 +873,21 @@ async def fetch_info(payload: FetchRequest):
             )
 
     if not media_items:
-        if platform == "instagram":
-            # ── Hydra Fallback Network (Leeching) ──
-            # Try our third-party scrapers
-            from scrapers import hydra_fetch
-            hydra_items = await hydra_fetch(url)
-            if hydra_items:
-                # Convert dicts to MediaItems
-                media_objects = [MediaItem(**i) for i in hydra_items]
-                return FetchResponse(
-                    platform=platform,
-                    title=media_objects[0].title or "Instagram Media",
-                    thumbnail=media_objects[0].thumbnail,
-                    media=media_objects,
-                )
+        # ── Hydra Fallback Network ──
+        # Try third-party scrapers for ALL platforms, not just Instagram.
+        # This is critical on datacenter IPs (like Render) where platforms
+        # aggressively block direct yt-dlp requests.
+        from scrapers import hydra_fetch
+        hydra_items = await hydra_fetch(url, platform=platform)
+        if hydra_items:
+            # Convert dicts to MediaItems
+            media_objects = [MediaItem(**i) for i in hydra_items]
+            return FetchResponse(
+                platform=platform,
+                title=media_objects[0].title or "Media",
+                thumbnail=media_objects[0].thumbnail,
+                media=media_objects,
+            )
 
         if platform == "instagram":
             raise HTTPException(
@@ -877,7 +895,7 @@ async def fetch_info(payload: FetchRequest):
                 detail={
                     "code": "no_media",
                     "message": "Instagram requires authentication to access this post.",
-                    "hint": "You can create a cookies.txt file to enable Instagram downloads. See README for instructions, or try the post in your browser first to make sure it's publicly accessible.",
+                    "hint": "Try again in a moment, or ensure the post is publicly accessible.",
                 },
             )
 

@@ -217,6 +217,8 @@ class InstagramDirectScraper(BaseScraper):
 class CobaltScraper(BaseScraper):
     name = "cobalt"
     # Public Cobalt v2 instances — /api endpoint with Accept: application/json
+    # Cobalt supports YouTube, Instagram, TikTok, Twitter/X, Reddit, Pinterest,
+    # Tumblr, Vimeo, SoundCloud, and many more platforms.
     instances = [
         "https://api.cobalt.tools",
         "https://cobalt.cibere.dev",
@@ -268,7 +270,7 @@ class CobaltScraper(BaseScraper):
                         return [{
                             "type": "video",
                             "url": data.get("url"),
-                            "title": "Instagram Media",
+                            "title": "Media",
                             "thumbnail": None
                         }]
 
@@ -408,28 +410,128 @@ class SnapInstaScraper(BaseScraper):
 
 
 # ─────────────────────────────────────────────
-# Engine Controller
-# Order: direct API (most reliable) → third-party scrapers
+# 5. Invidious API Fallback (YouTube-specific)
+# Invidious is a free, open-source YouTube frontend with public API instances.
+# No API key needed. Great fallback when yt-dlp can't reach YouTube.
 # ─────────────────────────────────────────────
-SCRAPERS = [
+class InvidiousScraper(BaseScraper):
+    name = "invidious"
+    instances = [
+        "https://vid.puffyan.us",
+        "https://invidious.nerdvpn.de",
+        "https://inv.nadeko.net",
+        "https://invidious.jing.rocks",
+        "https://invidious.privacyredirect.com",
+    ]
+
+    async def fetch(self, url: str) -> Optional[list[dict]]:
+        # Extract YouTube video ID
+        video_id = None
+        patterns = [
+            r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})',
+            r'youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                video_id = match.group(1)
+                break
+
+        if not video_id:
+            return None
+
+        for instance in self.instances:
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.get(
+                        f"{instance}/api/v1/videos/{video_id}",
+                        params={"fields": "title,videoThumbnails,formatStreams,adaptiveFormats"},
+                    )
+                    if resp.status_code != 200:
+                        print(f"[{self.name}] {instance} returned {resp.status_code}")
+                        continue
+
+                    data = resp.json()
+                    title = data.get("title", "YouTube Video")
+                    thumbs = data.get("videoThumbnails", [])
+                    thumbnail = thumbs[0]["url"] if thumbs else None
+
+                    # Prefer formatStreams (progressive, muxed audio+video)
+                    streams = data.get("formatStreams", [])
+                    if streams:
+                        # Pick highest quality progressive stream
+                        best = max(streams, key=lambda s: int(s.get("size", "0x0").split("x")[1]) if "x" in s.get("size", "") else 0)
+                        return [{
+                            "type": "video",
+                            "url": best["url"],
+                            "title": title,
+                            "thumbnail": thumbnail,
+                        }]
+
+                    # Fallback to adaptiveFormats (video-only, but still usable)
+                    adaptive = data.get("adaptiveFormats", [])
+                    video_formats = [f for f in adaptive if f.get("type", "").startswith("video/")]
+                    if video_formats:
+                        best = max(video_formats, key=lambda f: int(f.get("resolution", "0p").rstrip("p") or 0))
+                        return [{
+                            "type": "video",
+                            "url": best["url"],
+                            "title": title,
+                            "thumbnail": thumbnail,
+                        }]
+
+            except Exception as e:
+                print(f"[{self.name}] Instance {instance} failed: {e}")
+                continue
+
+        self.set_cooldown(1)
+        return None
+
+
+# ─────────────────────────────────────────────
+# Engine Controller
+# Scrapers are organized by platform. The "generic" list is tried for any URL.
+# ─────────────────────────────────────────────
+INSTAGRAM_SCRAPERS = [
     InstagramDirectScraper(),
     CobaltScraper(),
     SaveIGScraper(),
     SnapInstaScraper(),
 ]
 
-async def hydra_fetch(url: str) -> Optional[list[dict]]:
-    """Try available scrapers in order. Return first successful result."""
-    for scraper in SCRAPERS:
+YOUTUBE_SCRAPERS = [
+    CobaltScraper(),
+    InvidiousScraper(),
+]
+
+# Generic scrapers that work across many platforms
+GENERIC_SCRAPERS = [
+    CobaltScraper(),
+]
+
+
+async def hydra_fetch(url: str, platform: str = "generic") -> Optional[list[dict]]:
+    """Try available scrapers in order. Return first successful result.
+    
+    Routes to platform-specific scrapers when available, falls back to generic.
+    """
+    if platform == "instagram":
+        scrapers = INSTAGRAM_SCRAPERS
+    elif platform == "youtube":
+        scrapers = YOUTUBE_SCRAPERS
+    else:
+        scrapers = GENERIC_SCRAPERS
+
+    for scraper in scrapers:
         if not scraper.is_available():
             continue
             
-        print(f"[Hydra] Trying {scraper.name} for {url}...")
+        print(f"[Hydra] Trying {scraper.name} for {url} (platform={platform})...")
         result = await scraper.fetch(url)
         
         if result:
             print(f"[Hydra] Success with {scraper.name}")
             return result
             
-    print("[Hydra] All fallback scrapers exhausted or on cooldown.")
+    print(f"[Hydra] All fallback scrapers exhausted for platform={platform}.")
     return None
