@@ -7,7 +7,7 @@
 // CONFIG
 // ═══════════════════════════════════════════════════════
 const _isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const API_BASE = _isLocal ? 'http://localhost:8000' : 'https://api.downsnap.in';
+const API_BASE = _isLocal ? 'http://localhost:8000' : 'https://downsnap-9ybl.onrender.com';
 
 // ═══════════════════════════════════════════════════════
 // PAGE CONTEXT
