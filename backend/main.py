@@ -14,6 +14,7 @@ from typing import Optional
 
 import httpx
 import yt_dlp
+from yt_dlp.networking.impersonate import ImpersonateTarget
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -442,7 +443,7 @@ YDL_OPTS_BASE: dict = {
     # Browser impersonation: use curl-cffi to mimic Chrome's TLS fingerprint.
     # This is the single most effective way to bypass bot detection on datacenter IPs
     # without needing cookies. curl-cffi is already in requirements.txt.
-    "impersonate": "chrome124",
+    "impersonate": ImpersonateTarget.from_str("chrome"),
     "extractor_args": {
         "instagram": {"max_comments": ["0"]},
         "facebook": {},
