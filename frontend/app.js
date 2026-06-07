@@ -371,7 +371,7 @@ function buildMediaCard(item, index) {
     img.alt      = item.title || `Photo ${index + 1}`;
     img.loading  = 'lazy';
     img.decoding = 'async';
-    img.onerror  = () => { img.src = item.url; };
+    img.onerror  = function() { if (!this.dataset.retried) { this.dataset.retried = '1'; this.src = item.url; } };
     preview.appendChild(img);
   }
   card.appendChild(preview);
