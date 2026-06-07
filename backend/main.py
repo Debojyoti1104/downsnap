@@ -9,7 +9,6 @@ import os
 import re
 import mimetypes
 import urllib.parse
-from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -21,8 +20,7 @@ except Exception:
     _IMPERSONATE_TARGET = None
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, field_validator
 
 logger = logging.getLogger("downsnap")
@@ -107,7 +105,7 @@ app.add_middleware(
 
 
 # ─────────────────────────────────────────────
-# SEO Landing Pages Config
+# Static frontend (served by Cloudflare Pages — no mount needed here)
 # ─────────────────────────────────────────────
 SEO_PAGES = {
     "youtube-downloader": {
@@ -205,191 +203,6 @@ async def seo_redirect_middleware(request: Request, call_next):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     response.headers["Content-Language"] = "en"
     return response
-
-
-# ─────────────────────────────────────────────
-# SEO Landing page helper
-# ─────────────────────────────────────────────
-_frontend_index: Optional[str] = None
-
-
-def _load_index_html() -> str:
-    global _frontend_index
-    if _frontend_index is None:
-        idx_path = Path(__file__).parent.parent / "frontend" / "index.html"
-        _frontend_index = idx_path.read_text(encoding="utf-8")
-    return _frontend_index
-
-
-def _render_seo_page(page_key: str) -> str:
-    cfg = SEO_PAGES[page_key]
-    html = _load_index_html()
-    page_url = f"https://downsnap.in/{page_key}/"
-
-    html = re.sub(
-        r'<title>.*?</title>',
-        f'<title>{cfg["title"]}</title>',
-        html,
-    )
-    html = re.sub(
-        r'<meta name="description"[^>]*>',
-        f'<meta name="description" content=\'{cfg["description"]}\' />',
-        html,
-    )
-    html = re.sub(
-        r'<link rel="canonical"[^>]*>',
-        f'<link rel="canonical" href="{page_url}" />',
-        html,
-    )
-    html = re.sub(
-        r'<meta property="og:title"[^>]*>',
-        f'<meta property="og:title" content=\'{cfg["og_title"]}\' />',
-        html,
-    )
-    html = re.sub(
-        r'<meta property="og:description"[^>]*>',
-        f'<meta property="og:description" content=\'{cfg["og_desc"]}\' />',
-        html,
-    )
-    html = re.sub(
-        r'<meta property="og:url"[^>]*>',
-        f'<meta property="og:url" content="{page_url}" />',
-        html,
-    )
-    html = re.sub(
-        r'<meta name="twitter:title"[^>]*>',
-        f'<meta name="twitter:title" content=\'{cfg["tw_title"]}\' />',
-        html,
-    )
-    html = re.sub(
-        r'<meta name="twitter:description"[^>]*>',
-        f'<meta name="twitter:description" content=\'{cfg["tw_desc"]}\' />',
-        html,
-    )
-
-    # ── Map SEO keys to actual HTML section IDs ────────────
-    SECTION_ID_MAP = {
-        "youtube-downloader": "youtube-downloader",
-        "instagram-downloader": "instagram-downloader",
-        "online-video-downloader": "online-video-downloader",
-        "facebook-video-downloader": "facebook-downloader",
-        "pinterest-video-downloader": "pinterest-downloader",
-    }
-
-    is_platform_page = page_key != "online-video-downloader"
-
-    # ── Strip out other platform sections ───────────────────
-    for other in SEO_PAGES:
-        if other == page_key:
-            continue
-        other_id = SECTION_ID_MAP[other]
-        html = re.sub(
-            rf'<section\s+[^>]*?id="{re.escape(other_id)}"[^>]*>.*?</section>',
-            "",
-            html,
-            flags=re.DOTALL,
-        )
-        # Remove nav link pointing to this section
-        html = re.sub(
-            rf'<a\s+[^>]*?href="#{re.escape(other_id)}"[^>]*>.*?</a>',
-            "",
-            html,
-        )
-
-    # ── Remove tab bar on platform pages ────────────────────
-    if is_platform_page:
-        html = re.sub(
-            r'<div\s+id="tab-bar"[^>]*>.*?</div>',
-            "",
-            html,
-            flags=re.DOTALL,
-        )
-        html = re.sub(
-            r'<div\s+id="sub-options-container"[^>]*>.*?</div>',
-            "",
-            html,
-            flags=re.DOTALL,
-        )
-
-    # ── Add minimal inline style for direct input card ──────
-    if is_platform_page:
-        style_block = (
-            "<style>\n"
-            ".direct-input-card { display: block !important; }\n"
-            "#url-input, #fetch-btn, .eyebrow, .trust-bar { display: none !important; }\n"
-            "</style>\n"
-        )
-        html = html.replace("</head>", style_block + "</head>", 1)
-
-    html = html.replace("<body>", f'<body data-page="{page_key}" data-platform="{is_platform_page}">', 1)
-
-    # ── Inject dedicated input card for platform pages ───────
-    if is_platform_page:
-        direct_card = (
-            f'<div class="card direct-input-card animate-in delay-1" role="region" aria-label="{cfg["breadcrumb"]}">\n'
-            f'  <div class="card-body">\n'
-            f'    <div class="input-wrap">\n'
-            f'      <div class="input-icon" aria-hidden="true">\n'
-            f'        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">\n'
-            f'          <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>\n'
-            f'        </svg>\n'
-            f'      </div>\n'
-            f'      <input id="url-input-direct" type="url" inputmode="url" autocomplete="off" spellcheck="false"\n'
-            f'        placeholder="{cfg["placeholder"]}"\n'
-            f'        aria-label="{cfg["placeholder"]}" />\n'
-            f'    </div>\n'
-            f'    <button id="fetch-btn-direct" type="button" aria-label="Download media from URL">\n'
-            f'      <svg id="fetch-icon-direct" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\n'
-            f'        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />\n'
-            f'      </svg>\n'
-            f'      <div id="fetch-spinner-direct" class="spinner hidden" aria-hidden="true"></div>\n'
-            f'      <span id="fetch-btn-text-direct">Download Free</span>\n'
-            f'    </button>\n'
-            f'    <div id="error-box-direct" role="alert" aria-live="polite">\n'
-            f'      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\n'
-            f'        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>\n'
-            f'      </svg>\n'
-            f'      <span id="error-text-direct"></span>\n'
-            f'    </div>\n'
-            f'  </div>\n'
-            f'</div>'
-        )
-        html = html.replace(
-            'aria-label="Video downloader tool">',
-            'aria-label="Video downloader tool">\n' + direct_card,
-        )
-
-    # ── Hero heading + subtitle per page ─────────────────────
-    hero_block = (
-        f'<h1 id="hero-heading">{cfg["h1"]}</h1>\n'
-        f'        <p class="hero-sub">{cfg["hero_sub"]}</p>'
-    )
-    html = re.sub(
-        r'<h1 id="hero-heading">.*?</h1>\s*<p class="hero-sub">.*?</p>',
-        hero_block,
-        html,
-        flags=re.DOTALL,
-    )
-
-    # ── Breadcrumb JSON-LD ────────────────────────────────────
-    breadcrumb_json = (
-        '{\n'
-        '    "@context": "https://schema.org",\n'
-        '    "@type": "BreadcrumbList",\n'
-        '    "itemListElement": [\n'
-        f'      {{ "@type": "ListItem", "position": 1, "name": "Home", "item": "https://downsnap.in/" }},\n'
-        f'      {{ "@type": "ListItem", "position": 2, "name": "{cfg["breadcrumb"]}", "item": "{page_url}" }}\n'
-        '    ]\n'
-        '  }'
-    )
-    html = re.sub(
-        r'\{\s*"@context":\s*"https://schema\.org",\s*"@type":\s*"BreadcrumbList",\s*"itemListElement":\s*\[.*?\]\s*\}',
-        breadcrumb_json,
-        html,
-        flags=re.DOTALL,
-    )
-
-    return html
 
 
 # ─────────────────────────────────────────────
@@ -849,7 +662,8 @@ async def fetch_info(payload: FetchRequest):
 
     except HTTPException:
         raise  # re-raise our own structured errors unchanged
-    except Exception:
+    except Exception as e:
+        logger.error("Unhandled exception in fetch_info: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail={
             "code": "server_error",
             "message": "Something went wrong on our end.",
@@ -857,73 +671,83 @@ async def fetch_info(payload: FetchRequest):
         })
 
     # ── Flatten nested entries (handles carousels, playlists, nested posts)
-    media_items: list[MediaItem] = []
-    
-    if info:
-        leaves = _flatten_entries(info)
-        last_exc: Optional[Exception] = None
+    try:
+        media_items: list[MediaItem] = []
 
-        for leaf in leaves:
-            try:
-                item = _build_media_item_from_entry(leaf)
-                media_items.append(item)
-            except Exception as exc:
-                last_exc = exc
-                continue  # skip unparseable entries gracefully
+        if info:
+            leaves = _flatten_entries(info)
+            last_exc: Optional[Exception] = None
 
-        # If we got zero items and there was only one leaf, surface a clean error
-        if not media_items and last_exc is not None and len(leaves) == 1:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": "extraction_failed",
-                    "message": "Found the post but couldn't extract any downloadable media.",
-                    "hint": "The post may contain only text, a live stream, or a format we can't download yet.",
-                },
-            )
+            for leaf in leaves:
+                try:
+                    item = _build_media_item_from_entry(leaf)
+                    media_items.append(item)
+                except Exception as exc:
+                    last_exc = exc
+                    continue  # skip unparseable entries gracefully
 
-    if not media_items:
-        # ── Hydra Fallback Network ──
-        # Try third-party scrapers for ALL platforms, not just Instagram.
-        # This is critical on datacenter IPs (like Render) where platforms
-        # aggressively block direct yt-dlp requests.
-        from scrapers import hydra_fetch
-        hydra_items = await hydra_fetch(url, platform=platform)
-        if hydra_items:
-            # Convert dicts to MediaItems
-            media_objects = [MediaItem(**i) for i in hydra_items]
-            return FetchResponse(
-                platform=platform,
-                title=media_objects[0].title or "Media",
-                thumbnail=media_objects[0].thumbnail,
-                media=media_objects,
-            )
+            # If we got zero items and there was only one leaf, surface a clean error
+            if not media_items and last_exc is not None and len(leaves) == 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "extraction_failed",
+                        "message": "Found the post but couldn't extract any downloadable media.",
+                        "hint": "The post may contain only text, a live stream, or a format we can't download yet.",
+                    },
+                )
 
-        if platform == "instagram":
+        if not media_items:
+            # ── Hydra Fallback Network ──
+            # Try third-party scrapers for ALL platforms, not just Instagram.
+            # This is critical on datacenter IPs (like Render) where platforms
+            # aggressively block direct yt-dlp requests.
+            from scrapers import hydra_fetch
+            hydra_items = await hydra_fetch(url, platform=platform)
+            if hydra_items:
+                # Convert dicts to MediaItems
+                media_objects = [MediaItem(**i) for i in hydra_items]
+                return FetchResponse(
+                    platform=platform,
+                    title=media_objects[0].title or "Media",
+                    thumbnail=media_objects[0].thumbnail,
+                    media=media_objects,
+                )
+
+            if platform == "instagram":
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": "no_media",
+                        "message": "Instagram requires authentication to access this post.",
+                        "hint": "Try again in a moment, or ensure the post is publicly accessible.",
+                    },
+                )
+
             raise HTTPException(
                 status_code=404,
                 detail={
                     "code": "no_media",
-                    "message": "Instagram requires authentication to access this post.",
-                    "hint": "Try again in a moment, or ensure the post is publicly accessible.",
+                    "message": "No downloadable media was found in this post.",
+                    "hint": "The post might be private, contain only text, or be from a section we can't access yet.",
                 },
             )
 
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "no_media",
-                "message": "No downloadable media was found in this post.",
-                "hint": "The post might be private, contain only text, or be from a section we can't access yet.",
-            },
+        return FetchResponse(
+            platform=platform,
+            title=info.get("title") or info.get("description"),
+            thumbnail=info.get("thumbnail"),
+            media=media_items,
         )
-
-    return FetchResponse(
-        platform=platform,
-        title=info.get("title") or info.get("description"),
-        thumbnail=info.get("thumbnail"),
-        media=media_items,
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Unhandled exception in fetch_info (processing): %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail={
+            "code": "server_error",
+            "message": "Something went wrong on our end.",
+            "hint": "Please try again in a moment.",
+        })
 
 
 @app.get("/api/download-proxy")
@@ -1023,26 +847,7 @@ async def health():
         "last_self_ping": _last_ping.isoformat() + "Z" if _last_ping else None,
     }
 
-
+ 
 # ─────────────────────────────────────────────
-# SEO Landing page routes (server-rendered, no JS dependency)
+# Static frontend (served by Cloudflare Pages)
 # ─────────────────────────────────────────────
-_frontend_dir = Path(__file__).parent.parent / "frontend"
-
-
-for _page_key in SEO_PAGES:
-
-    def _make_handler(key: str):
-        async def _handler():
-            return _render_seo_page(key)
-        return _handler
-
-    app.get(f"/{_page_key}", response_class=HTMLResponse)(_make_handler(_page_key))
-
-
-# ─────────────────────────────────────────────
-# Static frontend (serves index.html + assets)
-# Mount AFTER all API routes so /api/* is never shadowed.
-# ─────────────────────────────────────────────
-if _frontend_dir.is_dir():
-    app.mount("/", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
