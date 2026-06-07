@@ -467,6 +467,9 @@ def _build_media_item_from_entry(entry: dict) -> MediaItem:
     if not media_url:
         raise ValueError("No usable URL found in entry.")
 
+    if media_type == "image" and re.search(r'\.(mp4|webm|mkv|avi|mov|flv|wmv|3gp|m4v|ts)(\?|&|$)', media_url, re.I):
+        media_type = "video"
+
     return MediaItem(
         type=media_type,
         url=media_url,
