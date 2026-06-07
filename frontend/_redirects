@@ -1,8 +1,8 @@
 # DownSnap - Cloudflare Pages redirects
 # Clean SEO URLs for platform pages (internal rewrites, not 301s)
-/youtube-downloader          /youtube.html          200
-/instagram-downloader        /instagram.html        200
-/facebook-video-downloader   /facebook.html         200
-/pinterest-video-downloader  /pinterest.html        200
-/online-video-downloader     /downloader.html       200
-/tiktok-downloader           /tiktok.html           200
+/youtube-downloader          /youtube               200
+/instagram-downloader        /instagram             200
+/facebook-video-downloader   /facebook              200
+/pinterest-video-downloader  /pinterest             200
+/online-video-downloader     /downloader            200
+/tiktok-downloader           /tiktok                200
