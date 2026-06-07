@@ -242,14 +242,7 @@ URL_PATTERN = re.compile(
 )
 
 # YouTube player client preference order — updated for mid-2026.
-# YouTube regularly rotates which clients it accepts for unauthenticated
-# extraction. Current most-reliable order (as of 2026):
-#   tv_embedded  — embedded TV client, rarely rate-limited
-#   ios          — official iOS app client, usually stable
-#   web_creator  — YouTube Studio client, bypasses many bot checks
-#   web_embedded — embedded web player, good fallback
-#   android      — last resort; sometimes throttled
-_YT_PLAYER_CLIENTS = ["ios", "web_creator", "android"]
+_YT_PLAYER_CLIENTS = ["tv_embedded", "ios", "web_creator", "android"]
 
 YDL_OPTS_BASE: dict = {
     "quiet": True,
@@ -260,10 +253,9 @@ YDL_OPTS_BASE: dict = {
     "extractor_args": {
         "instagram": {"max_comments": ["0"]},
         "facebook": {},
-        # YouTube: try all reliable clients in order.
-        # Do NOT skip hls/dash — some videos only serve HLS streams.
         "youtube": {
             "player_client": _YT_PLAYER_CLIENTS,
+            "skip": ["webpage"],
         },
     },
 }
@@ -569,11 +561,7 @@ async def fetch_info(payload: FetchRequest):
             info = {}  # let the empty-results path trigger Hydra for Instagram
 
         elif any(kw in detail for kw in ["player response", "playerresponse", "nsig"]):
-            raise HTTPException(status_code=503, detail={
-                "code": "youtube_throttle",
-                "message": "YouTube is temporarily blocking this request.",
-                "hint": "This happens occasionally. Wait 1–2 minutes, then try again.",
-            })
+            info = {}  # fall through to Hydra fallback (Invidious/Cobalt)
 
         elif any(kw in detail for kw in ["geo", "not available in your country", "region"]):
             raise HTTPException(status_code=451, detail={
