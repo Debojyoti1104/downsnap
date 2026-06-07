@@ -254,7 +254,6 @@ YDL_OPTS_BASE: dict = {
         "instagram": {"max_comments": ["0"]},
         "facebook": {},
         "youtube": {
-            "player_client": _YT_PLAYER_CLIENTS,
             "skip": ["webpage"],
         },
     },
