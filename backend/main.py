@@ -505,6 +505,11 @@ def run_yt_dlp(url: str) -> dict:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
         return info or {}
+    except yt_dlp.utils.YoutubeDLError:
+        opts.pop("impersonate", None)
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        return info or {}
     except yt_dlp.utils.DownloadError as exc:
         err_str = str(exc)
 
