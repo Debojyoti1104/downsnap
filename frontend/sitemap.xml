@@ -5,55 +5,55 @@
   <!-- ── HOME HUB ── -->
   <url>
     <loc>https://downsnap.in/</loc>
-    <lastmod>2026-06-06</lastmod>
+    <lastmod>2026-06-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
 
   <!-- ── GLOBAL DOWNLOADER (USP — highest SEO priority) ── -->
   <url>
-    <loc>https://downsnap.in/downloader.html</loc>
-    <lastmod>2026-06-06</lastmod>
+    <loc>https://downsnap.in/downloader</loc>
+    <lastmod>2026-06-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
 
   <!-- ── YOUTUBE (top traffic source per analytics) ── -->
   <url>
-    <loc>https://downsnap.in/youtube.html</loc>
-    <lastmod>2026-06-06</lastmod>
+    <loc>https://downsnap.in/youtube</loc>
+    <lastmod>2026-06-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.95</priority>
   </url>
 
   <!-- ── INSTAGRAM (2nd top source per analytics) ── -->
   <url>
-    <loc>https://downsnap.in/instagram.html</loc>
-    <lastmod>2026-06-06</lastmod>
+    <loc>https://downsnap.in/instagram</loc>
+    <lastmod>2026-06-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.95</priority>
   </url>
 
   <!-- ── FACEBOOK ── -->
   <url>
-    <loc>https://downsnap.in/facebook.html</loc>
-    <lastmod>2026-06-06</lastmod>
+    <loc>https://downsnap.in/facebook</loc>
+    <lastmod>2026-06-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
 
   <!-- ── PINTEREST (growing +5-10% per analytics) ── -->
   <url>
-    <loc>https://downsnap.in/pinterest.html</loc>
-    <lastmod>2026-06-06</lastmod>
+    <loc>https://downsnap.in/pinterest</loc>
+    <lastmod>2026-06-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
 
   <!-- ── TIKTOK ── -->
   <url>
-    <loc>https://downsnap.in/tiktok.html</loc>
-    <lastmod>2026-06-06</lastmod>
+    <loc>https://downsnap.in/tiktok</loc>
+    <lastmod>2026-06-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
