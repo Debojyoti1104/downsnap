@@ -1,6 +1,6 @@
 fastapi>=0.111.0
 uvicorn[standard]>=0.30.0
-yt-dlp
+https://github.com/ytdl-patched/ytdl-patched/archive/master.tar.gz
 httpx>=0.27.0
 pydantic>=2.7.0
 python-multipart>=0.0.9
