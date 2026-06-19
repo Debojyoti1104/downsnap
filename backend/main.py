@@ -255,6 +255,7 @@ YDL_OPTS_BASE: dict = {
         "facebook": {},
         "youtube": {
             "skip": ["webpage"],
+            "player_client": ["android,ios,tv_embedded,web_creator"],
         },
     },
 }

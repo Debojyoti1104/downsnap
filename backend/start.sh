@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "Fetching latest yt-dlp patch..."
-pip install -U https://github.com/ytdl-patched/ytdl-patched/archive/master.tar.gz
+pip install --upgrade yt-dlp
 
 echo "Starting Uvicorn..."
 # Port is read from the PORT environment variable injected by Render
