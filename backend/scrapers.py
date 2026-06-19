@@ -411,44 +411,72 @@ class SnapInstaScraper(BaseScraper):
 
 # ─────────────────────────────────────────────
 # 5. Invidious API Fallback (YouTube-specific)
-# Invidious is a free, open-source YouTube frontend with public API instances.
-# No API key needed. Great fallback when yt-dlp can't reach YouTube.
+# Invidious is a free, open-source YouTube frontend.
+# Instance list is refreshed from the official API periodically.
 # ─────────────────────────────────────────────
 class InvidiousScraper(BaseScraper):
     name = "invidious"
+    # Updated 2026-06 — checked against https://api.invidious.io/instances.json
     instances = [
-        "https://vid.puffyan.us",
-        "https://invidious.nerdvpn.de",
         "https://inv.nadeko.net",
-        "https://invidious.jing.rocks",
-        "https://invidious.privacyredirect.com",
+        "https://invidious.perennialte.ch",
+        "https://iv.datura.network",
+        "https://invidious.privacydev.net",
+        "https://yt.drgnz.club",
+        "https://invidious.io.lol",
+        "https://invidious.fdn.fr",
     ]
 
-    async def fetch(self, url: str) -> Optional[list[dict]]:
-        # Extract YouTube video ID
-        video_id = None
+    @staticmethod
+    def _extract_video_id(url: str) -> Optional[str]:
         patterns = [
             r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})',
             r'youtube\.com/embed/([a-zA-Z0-9_-]{11})',
         ]
-        for pattern in patterns:
-            match = re.search(pattern, url)
-            if match:
-                video_id = match.group(1)
-                break
+        for pat in patterns:
+            m = re.search(pat, url)
+            if m:
+                return m.group(1)
+        return None
 
+    async def _get_live_instances(self) -> list[str]:
+        """Fetch the live instance list from the Invidious API aggregator."""
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get("https://api.invidious.io/instances.json?sort_by=health")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # Each entry is [domain, {api: bool, type: "https", ...}]
+                    return [
+                        f"https://{entry[0]}"
+                        for entry in data
+                        if isinstance(entry, list)
+                        and entry[1].get("api") is True
+                        and entry[1].get("type") == "https"
+                    ][:8]  # cap at 8 to avoid long timeouts
+        except Exception:
+            pass
+        return self.instances  # fallback to hardcoded list
+
+    async def fetch(self, url: str) -> Optional[list[dict]]:
+        video_id = self._extract_video_id(url)
         if not video_id:
             return None
 
-        for instance in self.instances:
+        # Try live instances first, fall back to hardcoded
+        try:
+            instances_to_try = await self._get_live_instances()
+        except Exception:
+            instances_to_try = self.instances
+
+        for instance in instances_to_try:
             try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
+                async with httpx.AsyncClient(timeout=12.0) as client:
                     resp = await client.get(
                         f"{instance}/api/v1/videos/{video_id}",
                         params={"fields": "title,videoThumbnails,formatStreams,adaptiveFormats"},
                     )
                     if resp.status_code != 200:
-                        print(f"[{self.name}] {instance} returned {resp.status_code}")
                         continue
 
                     data = resp.json()
@@ -456,32 +484,24 @@ class InvidiousScraper(BaseScraper):
                     thumbs = data.get("videoThumbnails", [])
                     thumbnail = thumbs[0]["url"] if thumbs else None
 
-                    # Prefer formatStreams (progressive, muxed audio+video)
+                    # formatStreams = progressive muxed (audio+video) — preferred
                     streams = data.get("formatStreams", [])
                     if streams:
-                        # Pick highest quality progressive stream
-                        best = max(streams, key=lambda s: int(s.get("size", "0x0").split("x")[1]) if "x" in s.get("size", "") else 0)
-                        return [{
-                            "type": "video",
-                            "url": best["url"],
-                            "title": title,
-                            "thumbnail": thumbnail,
-                        }]
+                        best = max(
+                            streams,
+                            key=lambda s: int(s.get("size", "0x0").split("x")[-1]) if "x" in s.get("size", "") else 0
+                        )
+                        return [{"type": "video", "url": best["url"], "title": title, "thumbnail": thumbnail}]
 
-                    # Fallback to adaptiveFormats (video-only, but still usable)
+                    # adaptiveFormats fallback (video-only track)
                     adaptive = data.get("adaptiveFormats", [])
                     video_formats = [f for f in adaptive if f.get("type", "").startswith("video/")]
                     if video_formats:
                         best = max(video_formats, key=lambda f: int(f.get("resolution", "0p").rstrip("p") or 0))
-                        return [{
-                            "type": "video",
-                            "url": best["url"],
-                            "title": title,
-                            "thumbnail": thumbnail,
-                        }]
+                        return [{"type": "video", "url": best["url"], "title": title, "thumbnail": thumbnail}]
 
             except Exception as e:
-                print(f"[{self.name}] Instance {instance} failed: {e}")
+                print(f"[{self.name}] {instance} failed: {e}")
                 continue
 
         self.set_cooldown(1)
@@ -489,49 +509,304 @@ class InvidiousScraper(BaseScraper):
 
 
 # ─────────────────────────────────────────────
-# Engine Controller
-# Scrapers are organized by platform. The "generic" list is tried for any URL.
+# 6. Piped API Fallback (YouTube-specific, open-source)
+# Piped is a privacy-friendly YouTube frontend. Many public instances exist.
+# https://github.com/TeamPiped/Piped — returns direct stream URLs.
 # ─────────────────────────────────────────────
+class PipedScraper(BaseScraper):
+    name = "piped"
+    instances = [
+        "https://pipedapi.kavin.rocks",
+        "https://pipedapi.coldforge.xyz",
+        "https://api.piped.projectsegfau.lt",
+        "https://pipedapi.nosebs.ru",
+        "https://piped-api.lunar.icu",
+        "https://api.piped.privacydev.net",
+        "https://pipedapi.r4fo.com",
+    ]
+
+    @staticmethod
+    def _extract_video_id(url: str) -> Optional[str]:
+        patterns = [
+            r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})',
+            r'youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+        ]
+        for pat in patterns:
+            m = re.search(pat, url)
+            if m:
+                return m.group(1)
+        return None
+
+    async def fetch(self, url: str) -> Optional[list[dict]]:
+        video_id = self._extract_video_id(url)
+        if not video_id:
+            return None
+
+        for instance in self.instances:
+            try:
+                async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+                    resp = await client.get(f"{instance}/streams/{video_id}")
+                    if resp.status_code != 200:
+                        print(f"[{self.name}] {instance} returned {resp.status_code}")
+                        continue
+
+                    data = resp.json()
+                    title = data.get("title", "YouTube Video")
+                    thumbnail = data.get("thumbnailUrl")
+
+                    # videoStreams contains muxed progressive streams
+                    video_streams = data.get("videoStreams", [])
+                    # Filter to mimeType video/mp4 with audio (mimeType check)
+                    # Piped marks progressive streams — prefer them
+                    muxed = [
+                        s for s in video_streams
+                        if s.get("videoOnly") is False and "video/mp4" in s.get("mimeType", "")
+                    ]
+                    if not muxed:
+                        # take any non-video-only stream
+                        muxed = [s for s in video_streams if s.get("videoOnly") is False]
+                    if not muxed:
+                        muxed = video_streams  # last resort: any stream
+
+                    if muxed:
+                        best = max(muxed, key=lambda s: s.get("quality", 0) if isinstance(s.get("quality"), int)
+                                   else int(str(s.get("quality", "0")).rstrip("p") or 0))
+                        stream_url = best.get("url")
+                        if stream_url:
+                            return [{"type": "video", "url": stream_url, "title": title, "thumbnail": thumbnail}]
+
+            except Exception as e:
+                print(f"[{self.name}] {instance} failed: {e}")
+                continue
+
+        self.set_cooldown(2)
+        return None
+
+
+# ─────────────────────────────────────────────
+# 7. ytapi.ch Scraper (YouTube-specific)
+# ytapi.ch is a small public REST API that wraps innertube.
+# Returns direct mp4 stream URLs without requiring yt-dlp.
+# ─────────────────────────────────────────────
+class YTAPIChScraper(BaseScraper):
+    name = "ytapich"
+
+    @staticmethod
+    def _extract_video_id(url: str) -> Optional[str]:
+        patterns = [
+            r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})',
+            r'youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+        ]
+        for pat in patterns:
+            m = re.search(pat, url)
+            if m:
+                return m.group(1)
+        return None
+
+    async def fetch(self, url: str) -> Optional[list[dict]]:
+        video_id = self._extract_video_id(url)
+        if not video_id:
+            return None
+
+        try:
+            async with httpx.AsyncClient(timeout=12.0) as client:
+                resp = await client.get(
+                    f"https://ytapi.ch/api/video",
+                    params={"id": video_id}
+                )
+                if resp.status_code != 200:
+                    return None
+
+                data = resp.json()
+                streams = data.get("streams", []) or data.get("formats", [])
+                title = data.get("title", "YouTube Video")
+                thumbnail = data.get("thumbnail")
+
+                # Pick best muxed (has both audio and video)
+                muxed = [s for s in streams if s.get("hasAudio") and s.get("hasVideo")]
+                if not muxed:
+                    muxed = streams
+
+                if muxed:
+                    best = max(muxed, key=lambda s: int(str(s.get("height", 0) or s.get("quality", 0) or 0)))
+                    stream_url = best.get("url")
+                    if stream_url:
+                        return [{"type": "video", "url": stream_url, "title": title, "thumbnail": thumbnail}]
+
+        except Exception as e:
+            print(f"[{self.name}] Failed: {e}")
+
+        return None
+
+
+# ─────────────────────────────────────────────
+# 8. Reddit JSON API Scraper (Reddit-specific)
+# Reddit exposes a public JSON API at <post_url>.json
+# This bypasses yt-dlp entirely for Reddit videos with audio.
+# DASH streams need ffmpeg to merge, so we return the best video track
+# and let the frontend/proxy handle it.
+# ─────────────────────────────────────────────
+class RedditJSONScraper(BaseScraper):
+    name = "reddit_json"
+
+    async def fetch(self, url: str) -> Optional[list[dict]]:
+        if "reddit.com" not in url and "redd.it" not in url:
+            return None
+
+        # Normalise URL: ensure it ends without trailing slash before .json
+        clean = url.split("?")[0].rstrip("/")
+        json_url = clean + ".json"
+
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (compatible; DownSnap/1.0)",
+                "Accept": "application/json",
+            }
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                resp = await client.get(json_url, headers=headers)
+                if resp.status_code != 200:
+                    return None
+
+                data = resp.json()
+                # Reddit JSON returns a list of two listings (post + comments)
+                if not isinstance(data, list) or not data:
+                    return None
+
+                post_listing = data[0]
+                children = post_listing.get("data", {}).get("children", [])
+                if not children:
+                    return None
+
+                post_data = children[0].get("data", {})
+                title = post_data.get("title", "Reddit Video")
+                thumbnail = post_data.get("thumbnail") if post_data.get("thumbnail", "").startswith("http") else None
+
+                # v.redd.it DASH video
+                media = post_data.get("media") or {}
+                reddit_video = media.get("reddit_video") or {}
+                fallback_url = reddit_video.get("fallback_url")  # video-only (no audio)
+
+                # Try the HLS playlist URL (has both audio and video in some cases)
+                hls_url = reddit_video.get("hls_url")
+
+                # Best direct mp4 from preview
+                preview = post_data.get("preview") or {}
+                reddit_video_preview = preview.get("reddit_video_preview") or {}
+                preview_fallback = reddit_video_preview.get("fallback_url")
+
+                # Derive audio URL by replacing /DASH_VIDEO with /DASH_audio
+                best_video_url = fallback_url or preview_fallback
+                audio_url = None
+                if best_video_url:
+                    # Reddit audio track lives at the same base URL with DASH_audio.mp4
+                    base = best_video_url.split("/DASH_")[0] if "/DASH_" in best_video_url else None
+                    if base:
+                        audio_url = base + "/DASH_audio.mp4"
+
+                if best_video_url:
+                    items = [{
+                        "type": "video",
+                        "url": best_video_url,
+                        "title": title,
+                        "thumbnail": thumbnail,
+                    }]
+                    # Attach audio URL as extra metadata so the frontend can signal it
+                    if audio_url:
+                        items[0]["audio_url"] = audio_url
+                    return items
+
+                # Gallery posts
+                media_metadata = post_data.get("media_metadata") or {}
+                gallery_items = []
+                for key, val in media_metadata.items():
+                    if val.get("e") == "Image":
+                        best_img = val.get("s") or {}
+                        img_url = best_img.get("u") or best_img.get("gif")
+                        if img_url:
+                            gallery_items.append({"type": "image", "url": img_url.replace("&amp;", "&"), "title": title, "thumbnail": thumbnail})
+                if gallery_items:
+                    return gallery_items
+
+        except Exception as e:
+            print(f"[{self.name}] Failed: {e}")
+
+        return None
+
+
+# ─────────────────────────────────────────────
+# Engine Controller
+# ─────────────────────────────────────────────
+
+# Singleton instances (preserves cooldown state across requests)
+_cobalt = CobaltScraper()
+_invidious = InvidiousScraper()
+_piped = PipedScraper()
+_ytapich = YTAPIChScraper()
+_instagram_direct = InstagramDirectScraper()
+_saveig = SaveIGScraper()
+_snapinsta = SnapInstaScraper()
+_reddit_json = RedditJSONScraper()
+
 INSTAGRAM_SCRAPERS = [
-    InstagramDirectScraper(),
-    CobaltScraper(),
-    SaveIGScraper(),
-    SnapInstaScraper(),
+    _instagram_direct,
+    _cobalt,
+    _saveig,
+    _snapinsta,
 ]
 
+# YouTube waterfall: 4 independent sources, none rely on yt-dlp
+# Order: Cobalt (best quality) → Piped (reliable) → Invidious (fallback) → ytapi.ch (last resort)
 YOUTUBE_SCRAPERS = [
-    CobaltScraper(),
-    InvidiousScraper(),
+    _cobalt,
+    _piped,
+    _invidious,
+    _ytapich,
 ]
 
-# Generic scrapers that work across many platforms
+# Reddit: native JSON API first (fast, no rate limit), then Cobalt
+REDDIT_SCRAPERS = [
+    _reddit_json,
+    _cobalt,
+]
+
+# Generic: Cobalt handles most platforms
 GENERIC_SCRAPERS = [
-    CobaltScraper(),
+    _cobalt,
 ]
 
 
 async def hydra_fetch(url: str, platform: str = "generic") -> Optional[list[dict]]:
-    """Try available scrapers in order. Return first successful result.
-    
+    """Try available scrapers in order. Return the first successful result.
+
     Routes to platform-specific scrapers when available, falls back to generic.
+    Each scraper is tried sequentially — failures are swallowed and logged.
     """
+    url_lower = url.lower()
+
     if platform == "instagram":
         scrapers = INSTAGRAM_SCRAPERS
-    elif platform == "youtube":
+    elif platform == "youtube" or "youtube.com" in url_lower or "youtu.be" in url_lower:
         scrapers = YOUTUBE_SCRAPERS
+    elif "reddit.com" in url_lower or "redd.it" in url_lower:
+        scrapers = REDDIT_SCRAPERS
     else:
         scrapers = GENERIC_SCRAPERS
 
     for scraper in scrapers:
         if not scraper.is_available():
+            print(f"[Hydra] Skipping {scraper.name} (on cooldown)")
             continue
-            
+
         print(f"[Hydra] Trying {scraper.name} for {url} (platform={platform})...")
-        result = await scraper.fetch(url)
-        
+        try:
+            result = await scraper.fetch(url)
+        except Exception as e:
+            print(f"[Hydra] {scraper.name} raised unexpectedly: {e}")
+            result = None
+
         if result:
             print(f"[Hydra] Success with {scraper.name}")
             return result
-            
+
     print(f"[Hydra] All fallback scrapers exhausted for platform={platform}.")
     return None
